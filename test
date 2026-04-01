@@ -1,0 +1,21 @@
+#! /usr/bin/env bash
+#
+# Run the atdml test suite (built with the Testo library).
+#
+# Usage:
+#   ./test              run all tests
+#   ./test status       show results without re-running
+#   ./test approve      approve pending snapshots
+#
+# All arguments are forwarded to the test executable.
+# Build with 'dune build' before running.
+#
+set -e
+
+# Limit virtual memory to 28 GB to get a controlled OOM error rather than
+# crashing the whole container (which only has 32 GB of RAM).
+ulimit -v $((28 * 1024 * 1024))
+
+here=$(dirname "${BASH_SOURCE[0]}")
+exec dune exec --no-build --no-print-directory \
+  tests/Test_yamlx.exe -- "$@" --chdir "$here"
