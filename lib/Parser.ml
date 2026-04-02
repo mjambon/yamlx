@@ -69,7 +69,6 @@ type parse_state =
   | Parse_flow_mapping_key
   | Parse_flow_mapping_need_separator   (** after a key-value pair: requires ',' or '}' *)
   | Parse_flow_mapping_value
-  | Parse_flow_mapping_empty_value
   | Parse_end
 
 type t = {
@@ -627,10 +626,6 @@ let rec produce p =
       let sp = (peek_tok p).tok_start_pos in
       empty_scalar sp)
 
-  | Parse_flow_mapping_empty_value ->
-    p.state <- Parse_flow_mapping_need_separator;
-    let sp = (peek_tok p).tok_start_pos in
-    empty_scalar sp
 
 (** Parse a node (scalar, collection, or alias).
     Handles properties (anchor / tag) and dispatches to the right
