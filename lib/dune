@@ -1,3 +1,4 @@
 (library
- (name yamlx)
- (wrapped false))
+ (public_name yamlx)
+ (name YAMLx)
+)
