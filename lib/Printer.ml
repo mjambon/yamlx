@@ -77,12 +77,33 @@ let count_trailing_newlines s =
   while !i >= 0 && s.[!i] = '\n' do decr i done;
   n - 1 - !i
 
+(* ------------------------------------------------------------------ *)
+(* Comment emission helpers                                              *)
+(* ------------------------------------------------------------------ *)
+
+(** Return a string of head-comment lines, each indented to [level] and
+    terminated by ['\n'].  Returns [""] when [comments] is empty. *)
+let emit_heads ~level comments =
+  String.concat ""
+    (List.map (fun h -> indent level ^ "# " ^ h ^ "\n") comments)
+
+(** Return the inline suffix for a line comment, e.g. ["  # text"].
+    Returns [""] when [lc] is [None]. *)
+let emit_lc = function
+  | None   -> ""
+  | Some t -> "  # " ^ t
+
+(* ------------------------------------------------------------------ *)
+(* Block scalar emission                                                 *)
+(* ------------------------------------------------------------------ *)
+
 (** Return the block scalar header + indented body as a string.
     [marker] is ["|"] or [">"].
     Content is indented to [(level + 1) * spaces_per_level] columns.
+    [lc] is an optional line comment appended to the header line.
     The returned string includes the header line and all body lines,
     each terminated by ['\n']. *)
-let block_scalar marker s level =
+let block_scalar ?(lc = None) marker s level =
   let n     = String.length s in
   let trail = count_trailing_newlines s in
   let main  = String.sub s 0 (n - trail) in
@@ -100,7 +121,7 @@ let block_scalar marker s level =
     else ""
   in
   let b = Buffer.create (n + 16) in
-  Buffer.add_string b (marker ^ ind_ind ^ chomp ^ "\n");
+  Buffer.add_string b (marker ^ ind_ind ^ chomp ^ emit_lc lc ^ "\n");
   let lines = String.split_on_char '\n' main in
   List.iter (fun line ->
     if line = "" then Buffer.add_char b '\n'
@@ -140,6 +161,16 @@ let rec flow node =
   | Alias_node { name; _ } -> "*" ^ name
 
 (* ------------------------------------------------------------------ *)
+(* Node field helpers                                                    *)
+(* ------------------------------------------------------------------ *)
+
+let node_head_comments = function
+  | Scalar_node   r -> r.head_comments
+  | Sequence_node r -> r.head_comments
+  | Mapping_node  r -> r.head_comments
+  | Alias_node    r -> r.head_comments
+
+(* ------------------------------------------------------------------ *)
 (* Block serialisation                                                   *)
 (* ------------------------------------------------------------------ *)
 
@@ -161,25 +192,26 @@ let is_block_collection = function
       [level] and ends with ['\n']. *)
 let rec block_value ~level node =
   match node with
-  | Alias_node { name; _ } ->
-    (false, "*" ^ name ^ "\n")
+  | Alias_node { name; line_comment; _ } ->
+    (false, "*" ^ name ^ emit_lc line_comment ^ "\n")
 
-  | Scalar_node { anchor; tag; value; style; _ } ->
+  | Scalar_node { anchor; tag; value; style; line_comment; _ } ->
     let pre  = pp_anchor anchor ^ pp_tag tag in
     let body = match style with
-      | Plain         -> value ^ "\n"
-      | Single_quoted -> single_quoted_body value ^ "\n"
-      | Double_quoted -> double_quoted_body  value ^ "\n"
-      | Literal       -> block_scalar "|" value level
-      | Folded        -> block_scalar ">" value level
+      | Plain         -> value ^ emit_lc line_comment ^ "\n"
+      | Single_quoted -> single_quoted_body value ^ emit_lc line_comment ^ "\n"
+      | Double_quoted -> double_quoted_body  value ^ emit_lc line_comment ^ "\n"
+      | Literal       -> block_scalar ~lc:line_comment "|" value level
+      | Folded        -> block_scalar ~lc:line_comment ">" value level
     in
     (false, pre ^ body)
 
-  | Sequence_node { anchor; tag; items; flow = is_flow; _ } ->
+  | Sequence_node { anchor; tag; items; flow = is_flow; line_comment; foot_comments; _ } ->
     let pre = pp_anchor anchor ^ pp_tag tag in
     if is_flow || items = [] then
       (false,
-       pre ^ "[" ^ String.concat ", " (List.map flow items) ^ "]\n")
+       pre ^ "[" ^ String.concat ", " (List.map flow items) ^ "]"
+       ^ emit_lc line_comment ^ "\n")
     else begin
       let b = Buffer.create 64 in
       (* If there is an anchor or tag, emit it on its own line first *)
@@ -187,23 +219,27 @@ let rec block_value ~level node =
         Buffer.add_string b (String.trim pre ^ "\n");
       List.iter (fun item ->
         Buffer.add_string b (seq_item ~level item)) items;
+      List.iter (fun fc ->
+        Buffer.add_string b (indent level ^ "# " ^ fc ^ "\n")) foot_comments;
       (true, Buffer.contents b)
     end
 
-  | Mapping_node { anchor; tag; pairs; flow = is_flow; _ } ->
+  | Mapping_node { anchor; tag; pairs; flow = is_flow; line_comment; foot_comments; _ } ->
     let pre = pp_anchor anchor ^ pp_tag tag in
     if is_flow || pairs = [] then
       (false,
        pre ^ "{" ^
        String.concat ", "
          (List.map (fun (k, v) -> flow k ^ ": " ^ flow v) pairs)
-       ^ "}\n")
+       ^ "}" ^ emit_lc line_comment ^ "\n")
     else begin
       let b = Buffer.create 64 in
       if pre <> "" then
         Buffer.add_string b (String.trim pre ^ "\n");
       List.iter (fun (k, v) ->
         Buffer.add_string b (map_pair ~level k v)) pairs;
+      List.iter (fun fc ->
+        Buffer.add_string b (indent level ^ "# " ^ fc ^ "\n")) foot_comments;
       (true, Buffer.contents b)
     end
 
@@ -211,19 +247,21 @@ let rec block_value ~level node =
     The returned string includes the item's indentation, the ["-"] or
     ["- "] prefix, the value, and a trailing ['\n']. *)
 and seq_item ~level item =
-  let ind = indent level in
+  let ind   = indent level in
+  let heads = emit_heads ~level (node_head_comments item) in
   if is_block_collection item then begin
     (* Nested block collection: write "-\n" then items one level deeper *)
     let (_, content) = block_value ~level:(level + 1) item in
-    ind ^ "-\n" ^ content
+    heads ^ ind ^ "-\n" ^ content
   end else begin
     let (_, content) = block_value ~level:(level + 1) item in
-    ind ^ "- " ^ content
+    heads ^ ind ^ "- " ^ content
   end
 
 (** Emit one block mapping pair at indentation [level]. *)
 and map_pair ~level key value =
-  let ind = indent level in
+  let ind       = indent level in
+  let key_heads = emit_heads ~level (node_head_comments key) in
   (* Mapping keys are always written in inline form; block styles fall
      back to double-quoted since they cannot span multiple lines in a key
      position.  Complex (non-scalar) keys are serialised as flow nodes. *)
@@ -239,11 +277,13 @@ and map_pair ~level key value =
     | _ -> flow key  (* complex key as flow node *)
   in
   let (nl, val_str) = block_value ~level:(level + 1) value in
-  if nl then
-    (* Non-empty block collection value: key on its own line *)
-    ind ^ key_str ^ ":\n" ^ val_str
-  else
-    ind ^ key_str ^ ": " ^ val_str
+  if nl then begin
+    (* Non-empty block collection value: key on its own line.
+       Emit any head comments of the value between "key:\n" and the content. *)
+    let val_heads = emit_heads ~level:(level + 1) (node_head_comments value) in
+    key_heads ^ ind ^ key_str ^ ":\n" ^ val_heads ^ val_str
+  end else
+    key_heads ^ ind ^ key_str ^ ": " ^ val_str
 
 (* ------------------------------------------------------------------ *)
 (* Plain normalisation                                                   *)
@@ -256,41 +296,43 @@ exception Plain_error of string
 (** Normalise a node for plain-YAML output:
     - Expand aliases (substitute the resolved node recursively).
     - Strip all anchor declarations.
-    - Raise [Plain_error] on any explicit tag.
+    - If [strict], raise [Plain_error] on any explicit tag; otherwise strip
+      the tag silently.
     - Raise [Plain_error] on any complex (non-scalar) mapping key.
     - Convert all flow collections to block style. *)
-let rec normalise_plain node =
+let rec normalise_plain ~strict node =
   match node with
   | Alias_node { resolved; _ } ->
-    normalise_plain resolved
+    normalise_plain ~strict resolved
 
-  | Scalar_node { tag = Some t; _ } ->
+  | Scalar_node { tag = Some t; _ } when strict ->
     raise (Plain_error (Printf.sprintf "tags are not allowed in plain YAML (tag: %s)" t))
 
   | Scalar_node r ->
-    Scalar_node { r with anchor = None }
+    Scalar_node { r with anchor = None; tag = None }
 
-  | Sequence_node { tag = Some t; _ } ->
+  | Sequence_node { tag = Some t; _ } when strict ->
     raise (Plain_error (Printf.sprintf "tags are not allowed in plain YAML (tag: %s)" t))
 
   | Sequence_node r ->
     Sequence_node { r with anchor = None;
+                            tag    = None;
                             flow   = false;
-                            items  = List.map normalise_plain r.items }
+                            items  = List.map (normalise_plain ~strict) r.items }
 
-  | Mapping_node { tag = Some t; _ } ->
+  | Mapping_node { tag = Some t; _ } when strict ->
     raise (Plain_error (Printf.sprintf "tags are not allowed in plain YAML (tag: %s)" t))
 
   | Mapping_node r ->
     let pairs = List.map (fun (k, v) ->
-      let k' = normalise_plain k in
+      let k' = normalise_plain ~strict k in
       (match k' with
       | Sequence_node _ | Mapping_node _ ->
         raise (Plain_error "complex mapping keys are not allowed in plain YAML")
       | _ -> ());
-      (k', normalise_plain v)
+      (k', normalise_plain ~strict v)
     ) r.pairs in
-    Mapping_node { r with anchor = None; flow = false; pairs }
+    Mapping_node { r with anchor = None; tag = None; flow = false; pairs }
 
 (* ------------------------------------------------------------------ *)
 (* Document / stream                                                     *)
@@ -303,16 +345,20 @@ let rec normalise_plain node =
 let to_yaml (docs : node list) : string =
   let b = Buffer.create 256 in
   List.iteri (fun i doc ->
+    let heads   = emit_heads ~level:0 (node_head_comments doc) in
     let (nl, content) = block_value ~level:0 doc in
     if i = 0 then begin
       (* First document: no separator marker needed *)
+      Buffer.add_string b heads;
       Buffer.add_string b content
     end else if nl then begin
       (* Subsequent document, block collection *)
+      Buffer.add_string b heads;
       Buffer.add_string b "---\n";
       Buffer.add_string b content
     end else begin
       (* Subsequent document, inline value *)
+      Buffer.add_string b heads;
       Buffer.add_string b "--- ";
       Buffer.add_string b content
     end
@@ -320,8 +366,9 @@ let to_yaml (docs : node list) : string =
   Buffer.contents b
 
 (** Like {!to_yaml} but restricted to plain YAML:
-    aliases are expanded, anchor declarations are stripped, explicit tags
-    raise {!Plain_error}, complex mapping keys raise {!Plain_error}, and
-    all flow collections are converted to block style. *)
-let to_plain_yaml (docs : node list) : string =
-  to_yaml (List.map normalise_plain docs)
+    aliases are expanded, anchor declarations are stripped, tags are stripped
+    (or raise {!Plain_error} when [strict = true]), complex mapping keys
+    raise {!Plain_error}, and all flow collections are converted to block
+    style. *)
+let to_plain_yaml ?(strict = false) (docs : node list) : string =
+  to_yaml (List.map (normalise_plain ~strict) docs)

@@ -69,30 +69,40 @@ type event = Types.event = {
 
 type node = Types.node =
   | Scalar_node of {
-      anchor : string option;
-      tag    : string option;
-      value  : string;
-      style  : scalar_style;
-      pos    : pos;
+      anchor        : string option;
+      tag           : string option;
+      value         : string;
+      style         : scalar_style;
+      pos           : pos;
+      head_comments : string list;
+      line_comment  : string option;
     }
   | Sequence_node of {
-      anchor : string option;
-      tag    : string option;
-      items  : node list;
-      flow   : bool;
-      pos    : pos;
+      anchor        : string option;
+      tag           : string option;
+      items         : node list;
+      flow          : bool;
+      pos           : pos;
+      head_comments : string list;
+      line_comment  : string option;
+      foot_comments : string list;
     }
   | Mapping_node of {
-      anchor : string option;
-      tag    : string option;
-      pairs  : (node * node) list;
-      flow   : bool;
-      pos    : pos;
+      anchor        : string option;
+      tag           : string option;
+      pairs         : (node * node) list;
+      flow          : bool;
+      pos           : pos;
+      head_comments : string list;
+      line_comment  : string option;
+      foot_comments : string list;
     }
   | Alias_node of {
-      name     : string;
-      resolved : node;
-      pos      : pos;
+      name          : string;
+      resolved      : node;
+      pos           : pos;
+      head_comments : string list;
+      line_comment  : string option;
     }
 
 type value = Types.value =
@@ -130,7 +140,9 @@ let parse_events (input : string) : event list =
 let parse_nodes (input : string) : node list =
   let parser_  = make_pipeline input  in
   let composer = Composer.create parser_ in
-  Composer.compose_stream composer
+  let nodes    = Composer.compose_stream composer in
+  let raw_comments = Scanner.drain_comments (Parser.get_scanner parser_) in
+  Comment_attacher.attach nodes raw_comments
 
 (* ------------------------------------------------------------------ *)
 (* Public API — Pretty-printing                                          *)
@@ -140,7 +152,7 @@ let to_yaml = Printer.to_yaml
 
 exception Plain_error = Printer.Plain_error
 
-let to_plain_yaml = Printer.to_plain_yaml
+let to_plain_yaml ?strict = Printer.to_plain_yaml ?strict
 
 (* ------------------------------------------------------------------ *)
 (* Public API — Typed values                                             *)

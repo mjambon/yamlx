@@ -58,35 +58,56 @@ type scalar_style =
 (** {1 AST nodes} *)
 
 (** An in-memory representation of a parsed YAML document that preserves
-    all source-level detail: tags, anchors, scalar styles, and source
-    positions.  Anchor references are resolved by the composer, so
-    {!Alias_node} carries the actual target node rather than just a name. *)
+    all source-level detail: tags, anchors, scalar styles, source positions,
+    and — on a best-effort basis — comments.
+
+    {b Comment preservation} is a best-effort heuristic.  Comments inside flow
+    collections are dropped.  The attachment rules and field semantics may
+    change in future versions.
+
+    - [head_comments]: standalone comment lines that appear immediately before
+      the node in the source.  Each string is one comment line's text,
+      without the leading ['#'] character.
+    - [line_comment]: a comment appearing on the same source line as the
+      node, after its content.  Text does not include the leading ['#'].
+    - [foot_comments] (collections only): standalone comment lines appearing
+      after the last child of the collection, before the next sibling. *)
 type node =
   | Scalar_node of {
-      anchor : string option;  (** [&name] if present *)
-      tag    : string option;  (** resolved tag URI if present *)
-      value  : string;
-      style  : scalar_style;
-      pos    : pos;
+      anchor        : string option;  (** [&name] if present *)
+      tag           : string option;  (** resolved tag URI if present *)
+      value         : string;
+      style         : scalar_style;
+      pos           : pos;
+      head_comments : string list;
+      line_comment  : string option;
     }
   | Sequence_node of {
-      anchor : string option;
-      tag    : string option;
-      items  : node list;
-      flow   : bool;           (** true for [[a, b]] style, false for block *)
-      pos    : pos;
+      anchor        : string option;
+      tag           : string option;
+      items         : node list;
+      flow          : bool;           (** true for [[a, b]] style, false for block *)
+      pos           : pos;
+      head_comments : string list;
+      line_comment  : string option;
+      foot_comments : string list;
     }
   | Mapping_node of {
-      anchor : string option;
-      tag    : string option;
-      pairs  : (node * node) list;
-      flow   : bool;           (** true for [{a: b}] style, false for block *)
-      pos    : pos;
+      anchor        : string option;
+      tag           : string option;
+      pairs         : (node * node) list;
+      flow          : bool;           (** true for [{a: b}] style, false for block *)
+      pos           : pos;
+      head_comments : string list;
+      line_comment  : string option;
+      foot_comments : string list;
     }
   | Alias_node of {
-      name     : string;  (** the anchor name, without the [*] *)
-      resolved : node;
-      pos      : pos;
+      name          : string;  (** the anchor name, without the [*] *)
+      resolved      : node;
+      pos           : pos;
+      head_comments : string list;
+      line_comment  : string option;
     }
 
 (** {1 Typed values} *)
@@ -132,13 +153,14 @@ exception Plain_error of string
 (** Like {!to_yaml} but restricted to a plain subset of YAML:
     - Aliases are expanded (the resolved node is substituted in place).
     - Anchor declarations are stripped.
-    - Explicit tags raise {!Plain_error}.
-    - Complex (non-scalar) mapping keys raise {!Plain_error}.
+    - Tags are stripped unless [~strict:true], in which case they raise
+      {!Plain_error}.
+    - Complex (non-scalar) mapping keys always raise {!Plain_error}.
     - Flow collections are converted to block style.
 
     The result contains only scalars, block sequences, and block mappings
     with scalar keys — no YAML-specific features. *)
-val to_plain_yaml : node list -> string
+val to_plain_yaml : ?strict:bool -> node list -> string
 
 (** Parse [input] and resolve each document to a typed {!value} using
     the YAML 1.2 JSON schema.

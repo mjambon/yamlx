@@ -25,3 +25,7 @@ val check_event : t -> Types.event_kind list -> bool
 
 (** Collect all events into a list.  Reads until [Stream_end]. *)
 val to_event_list : t -> Types.event list
+
+(** Expose the underlying scanner.  Used to drain accumulated comments
+    after parsing is complete via {!Scanner.drain_comments}. *)
+val get_scanner : t -> Scanner.state

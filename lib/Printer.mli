@@ -23,7 +23,7 @@ val to_yaml : Types.node list -> string
 exception Plain_error of string
 
 (** Like {!to_yaml} but restricted to plain YAML: aliases are expanded,
-    anchor declarations are stripped, explicit tags raise {!Plain_error},
-    and complex mapping keys raise {!Plain_error}.
-    All flow collections are converted to block style. *)
-val to_plain_yaml : Types.node list -> string
+    anchor declarations are stripped, tags are stripped (or raise
+    {!Plain_error} when [~strict:true]), complex mapping keys always raise
+    {!Plain_error}, and all flow collections are converted to block style. *)
+val to_plain_yaml : ?strict:bool -> Types.node list -> string

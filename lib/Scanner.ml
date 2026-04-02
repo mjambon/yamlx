@@ -63,6 +63,16 @@ type state = {
   (* Stream lifecycle *)
   mutable done_                    : bool;
   mutable stream_start_produced   : bool;
+
+  (* Comment side-channel (block context only) *)
+  comments : (int * bool * string) Queue.t;
+    (** [(source_line, is_line_comment, text)] triples collected while
+        scanning.  [is_line_comment = true] means the ['#'] was preceded
+        only by spaces on the same line (trailing/line comment);
+        [false] means a newline was consumed before the ['#'] (standalone
+        head comment).  Text does not include the leading ['#'] character
+        or the optional space that follows it.
+        Comments inside flow collections ([flow_level > 0]) are discarded. *)
 }
 
 and simple_key = {
@@ -237,7 +247,12 @@ let need_more_tokens scn =
 (** Skip spaces (and tabs in flow context or after checking) and comments.
     After each line break [allow_simple_key] is set to [true]. *)
 let scan_to_next_token scn =
-  let found = ref false in
+  let found      = ref false in
+  (* Tracks whether the current position is on a fresh line (no token yet on
+     this line).  Initialised to [true] when we are at column 0 so that a '#'
+     at the very start of the file, or right after a linebreak, is correctly
+     classified as a head comment rather than a line comment. *)
+  let had_newline = ref ((pos scn).column = 0) in
   while not !found do
     (* Skip spaces.  Tabs are never allowed as indentation in block context
        but are allowed as separation in flow context and after some tokens.
@@ -270,14 +285,35 @@ let scan_to_next_token scn =
        A '#' immediately after a token with no intervening space is not a
        comment and must be treated as an error character by the dispatcher. *)
     if peek scn 0 = 0x23 (* # *) && !had_white then begin
-      let continue_comment = ref true in
-      while !continue_comment do
-        let cp = peek scn 0 in
-        if cp = Char_class.eof || Char_class.is_linebreak cp then
-          continue_comment := false
-        else
-          advance scn 1
-      done
+      if scn.flow_level = 0 then begin
+        (* Block context: capture the comment text. *)
+        let comment_line     = (pos scn).line in
+        let is_line_comment  = not !had_newline in
+        advance scn 1;                      (* consume '#' *)
+        if peek scn 0 = 0x20 then advance scn 1;   (* skip one optional space *)
+        let buf = Buffer.create 64 in
+        let continue_comment = ref true in
+        while !continue_comment do
+          let cp = peek scn 0 in
+          if cp = Char_class.eof || Char_class.is_linebreak cp then
+            continue_comment := false
+          else begin
+            Reader.encode_utf8_to buf cp;
+            advance scn 1
+          end
+        done;
+        Queue.add (comment_line, is_line_comment, Buffer.contents buf) scn.comments
+      end else begin
+        (* Flow context: discard the comment as before. *)
+        let continue_comment = ref true in
+        while !continue_comment do
+          let cp = peek scn 0 in
+          if cp = Char_class.eof || Char_class.is_linebreak cp then
+            continue_comment := false
+          else
+            advance scn 1
+        done
+      end
     end;
     (* Consume a line break if present *)
     let cp = peek scn 0 in
@@ -287,9 +323,12 @@ let scan_to_next_token scn =
          a newline reset the column to 0 before we look for the next token.
          allow_simple_key was already set by scan_line_break. *)
       if scn.flow_level = 0 then
-        scn.allow_simple_key <- true
-    end else
+        scn.allow_simple_key <- true;
+      had_newline := true
+    end else begin
+      had_newline := false;
       found := true
+    end
   done
 
 (* ------------------------------------------------------------------ *)
@@ -1523,7 +1562,14 @@ let create (reader : Reader.t) : state =
   ; possible_simple_keys = Hashtbl.create 4
   ; done_                = false
   ; stream_start_produced = false
+  ; comments             = Queue.create ()
   }
+
+(** Return all accumulated comments in source order as
+    [(line, is_line_comment, text)] triples.
+    Typically called after the full token stream has been consumed. *)
+let drain_comments (scn : state) : (int * bool * string) list =
+  Queue.fold (fun acc x -> x :: acc) [] scn.comments |> List.rev
 
 (** Ensure at least one token is available, fetching more if necessary. *)
 let ensure_token (scn : state) : unit =

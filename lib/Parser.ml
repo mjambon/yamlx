@@ -754,6 +754,10 @@ let check_event (p : t) (kinds : event_kind list) : bool =
     | _ -> false
   ) kinds
 
+(** Expose the underlying scanner, e.g. to drain accumulated comments after
+    parsing is complete. *)
+let get_scanner (p : t) : Scanner.state = p.scanner
+
 (** Collect all events into a list.  This is a convenience for tests. *)
 let to_event_list (p : t) : event list =
   let result = ref [] in

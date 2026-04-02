@@ -138,30 +138,40 @@ type event = {
     actual target node. *)
 type node =
   | Scalar_node of {
-      anchor : string option;
-      tag    : string option;
-      value  : string;
-      style  : scalar_style;
-      pos    : pos;
+      anchor        : string option;
+      tag           : string option;
+      value         : string;
+      style         : scalar_style;
+      pos           : pos;
+      head_comments : string list;
+      line_comment  : string option;
     }
   | Sequence_node of {
-      anchor : string option;
-      tag    : string option;
-      items  : node list;
-      flow   : bool;
-      pos    : pos;
+      anchor        : string option;
+      tag           : string option;
+      items         : node list;
+      flow          : bool;
+      pos           : pos;
+      head_comments : string list;
+      line_comment  : string option;
+      foot_comments : string list;
     }
   | Mapping_node of {
-      anchor : string option;
-      tag    : string option;
-      pairs  : (node * node) list;
-      flow   : bool;
-      pos    : pos;
+      anchor        : string option;
+      tag           : string option;
+      pairs         : (node * node) list;
+      flow          : bool;
+      pos           : pos;
+      head_comments : string list;
+      line_comment  : string option;
+      foot_comments : string list;
     }
   | Alias_node of {
-      name     : string;
-      resolved : node;
-      pos      : pos;
+      name          : string;
+      resolved      : node;
+      pos           : pos;
+      head_comments : string list;
+      line_comment  : string option;
     }
 
 (** {1 Resolved values — Resolver output} *)

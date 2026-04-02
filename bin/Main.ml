@@ -6,8 +6,10 @@
 
     Formats:
       yaml     pretty-printed YAML via YAMLx.to_yaml (default)
-      plain    plain YAML: aliases expanded, no tags, no flow collections
-      events   yaml-test-suite event-tree notation *)
+      plain    plain YAML: aliases expanded, tags stripped, no flow collections
+      events   yaml-test-suite event-tree notation
+
+    --strict (plain only): error on tags instead of stripping them *)
 
 (* ------------------------------------------------------------------ *)
 (* Output format                                                         *)
@@ -16,6 +18,7 @@
 type format = Events | Yaml | Plain
 
 let format = ref Yaml
+let strict = ref false
 
 let set_format s =
   match s with
@@ -29,7 +32,8 @@ let set_format s =
 let spec =
   [ "--format", Arg.String set_format,
     "FORMAT  Output format: yaml (default), plain, or events"
-  ; "-f", Arg.String set_format, "FORMAT  Short alias for --format"
+  ; "-f",       Arg.String set_format, "FORMAT  Short alias for --format"
+  ; "--strict",  Arg.Set strict,       "  With --format plain: error on tags instead of stripping them"
   ]
 
 (* ------------------------------------------------------------------ *)
@@ -91,7 +95,7 @@ let () =
     | Yaml ->
       YAMLx.to_yaml (nodes_or_exit ())
     | Plain ->
-      (match YAMLx.to_plain_yaml (nodes_or_exit ()) with
+      (match YAMLx.to_plain_yaml ~strict:!strict (nodes_or_exit ()) with
        | exception (YAMLx.Plain_error msg) ->
          Printf.eprintf "Plain error: %s\n" msg;
          exit 1

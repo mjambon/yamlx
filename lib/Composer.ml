@@ -45,12 +45,14 @@ let rec compose_node (c : t) : node =
   | Alias name ->
     (match Hashtbl.find_opt c.anchors name with
     | Some target ->
-      Alias_node { name; resolved = target; pos = ev.start_pos }
+      Alias_node { name; resolved = target; pos = ev.start_pos;
+                   head_comments = []; line_comment = None }
     | None ->
       Types.parse_error ev.start_pos "undefined alias '*%s'" name)
 
   | Scalar { anchor; tag; value; style } ->
-    let node = Scalar_node { anchor; tag; value; style; pos = ev.start_pos } in
+    let node = Scalar_node { anchor; tag; value; style; pos = ev.start_pos;
+                              head_comments = []; line_comment = None } in
     Option.iter (fun n -> register_anchor c n node) anchor;
     node
 
@@ -68,7 +70,8 @@ let rec compose_node (c : t) : node =
         items := compose_node c :: !items)
     done;
     let node =
-      Sequence_node { anchor; tag; items = List.rev !items; flow; pos = start }
+      Sequence_node { anchor; tag; items = List.rev !items; flow; pos = start;
+                      head_comments = []; line_comment = None; foot_comments = [] }
     in
     Option.iter (fun n -> register_anchor c n node) anchor;
     node
@@ -89,7 +92,8 @@ let rec compose_node (c : t) : node =
         pairs := (key, value) :: !pairs)
     done;
     let node =
-      Mapping_node { anchor; tag; pairs = List.rev !pairs; flow; pos = start }
+      Mapping_node { anchor; tag; pairs = List.rev !pairs; flow; pos = start;
+                     head_comments = []; line_comment = None; foot_comments = [] }
     in
     Option.iter (fun n -> register_anchor c n node) anchor;
     node
