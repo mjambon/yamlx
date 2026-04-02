@@ -41,8 +41,8 @@ let run_test_case (tc : Suite_loader.test_case) () =
   if tc.fail then begin
     (* Expect a scan or parse error *)
     (match YAMLx.parse_events tc.yaml with
-    | exception (Types.Scan_error _)  -> ()  (* expected *)
-    | exception (Types.Parse_error _) -> ()  (* expected *)
+    | exception (YAMLx.Scan_error _)  -> ()  (* expected *)
+    | exception (YAMLx.Parse_error _) -> ()  (* expected *)
     | _ ->
       failwith (Printf.sprintf
         "[%s] %s: expected a parse failure but parsing succeeded"
@@ -51,11 +51,11 @@ let run_test_case (tc : Suite_loader.test_case) () =
     (* Parse must succeed *)
     let events =
       match YAMLx.parse_events tc.yaml with
-      | exception (Types.Scan_error e) ->
+      | exception (YAMLx.Scan_error e) ->
         failwith (Printf.sprintf
           "[%s] %s: unexpected scan error at line %d col %d: %s"
           tc.id tc.name e.pos.line e.pos.column e.msg)
-      | exception (Types.Parse_error e) ->
+      | exception (YAMLx.Parse_error e) ->
         failwith (Printf.sprintf
           "[%s] %s: unexpected parse error at line %d col %d: %s"
           tc.id tc.name e.pos.line e.pos.column e.msg)
@@ -65,8 +65,8 @@ let run_test_case (tc : Suite_loader.test_case) () =
     (match tc.tree with
     | None -> ()
     | Some expected_tree ->
-      let actual_tree = Event_printer.to_tree events in
-      (match Event_printer.diff_trees ~expected:expected_tree ~actual:actual_tree with
+      let actual_tree = YAMLx.events_to_tree events in
+      (match YAMLx.diff_event_trees ~expected:expected_tree ~actual:actual_tree with
       | None -> ()  (* trees match *)
       | Some diff ->
         failwith (Printf.sprintf
@@ -83,8 +83,8 @@ let run_test_case (tc : Suite_loader.test_case) () =
 let unit_tests () =
   let check_parse label yaml expected_events () =
     let events = YAMLx.parse_events yaml in
-    let actual = Event_printer.to_tree events in
-    (match Event_printer.diff_trees ~expected:expected_events ~actual with
+    let actual = YAMLx.events_to_tree events in
+    (match YAMLx.diff_event_trees ~expected:expected_events ~actual with
     | None      -> ()
     | Some diff ->
       failwith (Printf.sprintf "%s: %s\nExpected:\n%s\nGot:\n%s"
@@ -125,35 +125,35 @@ let unit_tests () =
       (fun () ->
         let vs = YAMLx.of_string "~" in
         match vs with
-        | [Types.Null] -> ()
+        | [YAMLx.Null] -> ()
         | _ -> failwith "expected Null")
 
   ; Testo.create "resolver bool true"
       (fun () ->
         let vs = YAMLx.of_string "true" in
         match vs with
-        | [Types.Bool true] -> ()
+        | [YAMLx.Bool true] -> ()
         | _ -> failwith "expected Bool true")
 
   ; Testo.create "resolver int"
       (fun () ->
         let vs = YAMLx.of_string "42" in
         match vs with
-        | [Types.Int 42L] -> ()
+        | [YAMLx.Int 42L] -> ()
         | _ -> failwith "expected Int 42")
 
   ; Testo.create "resolver float"
       (fun () ->
         let vs = YAMLx.of_string "3.14" in
         match vs with
-        | [Types.Float f] when Float.abs (f -. 3.14) < 1e-10 -> ()
+        | [YAMLx.Float f] when Float.abs (f -. 3.14) < 1e-10 -> ()
         | _ -> failwith "expected Float ~3.14")
 
   ; Testo.create "resolver string (quoted)"
       (fun () ->
         let vs = YAMLx.of_string {|"42"|} in
         match vs with
-        | [Types.String "42"] -> ()
+        | [YAMLx.String "42"] -> ()
         | _ -> failwith "expected String \"42\"")
   ]
 

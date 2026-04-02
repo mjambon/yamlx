@@ -1,54 +1,192 @@
 (** YAMLx — pure-OCaml YAML 1.2 parser.
-    This is the main public module.  All other modules in the library are
-    implementation details; this module exposes the high-level API.
 
     Typical usage:
     {[
-      (* Parse into typed values (JSON schema) *)
+      (* Parse a multi-document YAML string into typed values *)
       let values = YAMLx.of_string "answer: 42\nflag: true"
       (* → [Map [(String "answer", Int 42L); (String "flag", Bool true)]] *)
 
-      (* Parse into AST nodes (preserves style, anchors, tags) *)
+      (* Parse preserving the full AST (tags, anchors, source positions) *)
       let nodes = YAMLx.parse_nodes "- foo\n- bar"
 
-      (* Parse into a raw event list (for testing / streaming) *)
-      let events = YAMLx.parse_events "key: val"
+      (* Non-raising variant *)
+      match YAMLx.of_string_result input with
+      | Ok values -> ...
+      | Error msg -> ...
     ]}
 
-    All functions raise [Types.Scan_error] or [Types.Parse_error] on
-    malformed input unless the [_result] variant is used. *)
+    Errors are reported by raising {!Scan_error} or {!Parse_error}.
+    Use {!of_string_result} to get a [result] instead. *)
 
-(** {1 Events} *)
+(** {1 Source positions} *)
 
-(** Parse [input] and return the flat event list.
-    Includes the [Stream_start] and [Stream_end] boundary events.
-    Raises [Types.Scan_error] or [Types.Parse_error] on malformed input. *)
-val parse_events : string -> Types.event list
+(** A location in the YAML source text.
+    [line] is 1-based; [column] is 0-based (Unicode codepoints from the
+    start of the line, matching the YAML specification). *)
+type pos = {
+  line   : int;
+  column : int;
+  offset : int;  (** codepoint index from the start of the input *)
+}
+
+(** {1 Errors} *)
+
+type yaml_error = {
+  msg : string;
+  pos : pos;
+}
+
+(** Raised when the input contains invalid YAML syntax at the scanning
+    (tokenisation) stage. *)
+exception Scan_error  of yaml_error
+
+(** Raised when the token stream does not conform to the YAML grammar. *)
+exception Parse_error of yaml_error
+
+(** {1 Scalar styles} *)
+
+(** How a scalar value was written in the source.
+    Preserved in AST nodes so callers can distinguish, for example, a
+    quoted empty string from an unquoted null. *)
+type scalar_style =
+  | Plain          (** unquoted, e.g. [foo] *)
+  | Single_quoted  (** e.g. ['foo'] *)
+  | Double_quoted  (** e.g. ["foo"] *)
+  | Literal        (** block scalar [|]: newlines preserved *)
+  | Folded         (** block scalar [>]: newlines folded to spaces *)
 
 (** {1 AST nodes} *)
 
-(** Parse [input] and return one AST node per YAML document.
-    Anchor references are resolved; aliases carry the resolved node.
-    Raises [Types.Scan_error] or [Types.Parse_error] on malformed input. *)
-val parse_nodes : string -> Types.node list
+(** An in-memory representation of a parsed YAML document that preserves
+    all source-level detail: tags, anchors, scalar styles, and source
+    positions.  Anchor references are resolved by the composer, so
+    {!Alias_node} carries the actual target node rather than just a name. *)
+type node =
+  | Scalar_node of {
+      anchor : string option;  (** [&name] if present *)
+      tag    : string option;  (** resolved tag URI if present *)
+      value  : string;
+      style  : scalar_style;
+      pos    : pos;
+    }
+  | Sequence_node of {
+      anchor : string option;
+      tag    : string option;
+      items  : node list;
+      flow   : bool;           (** true for [[a, b]] style, false for block *)
+      pos    : pos;
+    }
+  | Mapping_node of {
+      anchor : string option;
+      tag    : string option;
+      pairs  : (node * node) list;
+      flow   : bool;           (** true for [{a: b}] style, false for block *)
+      pos    : pos;
+    }
+  | Alias_node of {
+      name     : string;  (** the anchor name, without the [*] *)
+      resolved : node;
+      pos      : pos;
+    }
 
 (** {1 Typed values} *)
 
-(** Parse [input] and resolve each document's node to a [Types.value] using
+(** A YAML value resolved according to the YAML 1.2 JSON schema.
+
+    Plain (unquoted) scalars are matched against the following patterns:
+    - [null], [Null], [NULL], [~], or empty string → {!Null}
+    - [true]/[True]/[TRUE]/[false]/[False]/[FALSE] → {!Bool}
+    - Decimal, [0x…] hex, or [0o…] octal integers → {!Int}
+    - Decimal or scientific floats; [.inf], [.nan] variants → {!Float}
+    - Everything else, and all quoted or block scalars → {!String} *)
+type value =
+  | Null
+  | Bool   of bool
+  | Int    of int64
+  | Float  of float
+  | String of string
+  | Seq    of value list
+  | Map    of (value * value) list
+
+(** {1 Parsing} *)
+
+(** Parse [input] and return one {!node} per YAML document.
+    Use this when you need tags, anchors, scalar styles, or source
+    positions.  For simple data extraction, prefer {!of_string}.
+    Raises {!Scan_error} or {!Parse_error} on malformed input. *)
+val parse_nodes : string -> node list
+
+(** Parse [input] and resolve each document to a typed {!value} using
     the YAML 1.2 JSON schema.
-    Raises [Types.Scan_error] or [Types.Parse_error] on malformed input. *)
-val of_string : string -> Types.value list
+    Raises {!Scan_error} or {!Parse_error} on malformed input. *)
+val of_string : string -> value list
 
 (** Parse [input] and return the first document's value.
-    Raises [Not_found] if the stream is empty.
-    Raises [Types.Scan_error] or [Types.Parse_error] on malformed input. *)
-val one_of_string : string -> Types.value
+    Raises [Not_found] if the stream contains no documents.
+    Raises {!Scan_error} or {!Parse_error} on malformed input. *)
+val one_of_string : string -> value
 
 (** {1 Error handling} *)
 
-(** Format a [Types.yaml_error] as a human-readable string. *)
-val string_of_error : Types.yaml_error -> string
+(** Format a {!yaml_error} as ["line L, column C: message"]. *)
+val string_of_error : yaml_error -> string
 
-(** Parse [input] and return [Ok values] or [Error msg] instead of raising
-    exceptions. *)
-val of_string_result : string -> (Types.value list, string) result
+(** Like {!of_string} but returns [Ok values] or [Error msg] instead of
+    raising exceptions. *)
+val of_string_result : string -> (value list, string) result
+
+(**/**)
+
+(** {1 Event stream — internal / subject to change} *)
+
+type event_kind =
+  | Stream_start
+  | Stream_end
+  | Document_start of {
+      explicit       : bool;
+      version        : (int * int) option;
+      tag_directives : (string * string) list;
+    }
+  | Document_end of { explicit : bool }
+  | Mapping_start of {
+      anchor   : string option;
+      tag      : string option;
+      implicit : bool;
+      flow     : bool;
+    }
+  | Mapping_end
+  | Sequence_start of {
+      anchor   : string option;
+      tag      : string option;
+      implicit : bool;
+      flow     : bool;
+    }
+  | Sequence_end
+  | Scalar of {
+      anchor : string option;
+      tag    : string option;
+      value  : string;
+      style  : scalar_style;
+    }
+  | Alias of string
+
+type event = {
+  kind      : event_kind;
+  start_pos : pos;
+  end_pos   : pos;
+}
+
+(** Parse [input] and return the raw event list.
+    Used internally by the test suite to compare against yaml-test-suite
+    expected output.  Not part of the stable public API. *)
+val parse_events : string -> event list
+
+(** Render an event list as a yaml-test-suite tree string.
+    Each event becomes one line; the result ends with a newline. *)
+val events_to_tree : event list -> string
+
+(** Compare two tree strings and return a human-readable description of
+    the first difference, or [None] if they are equal. *)
+val diff_event_trees : expected:string -> actual:string -> string option
+
+(**/**)

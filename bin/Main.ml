@@ -23,14 +23,14 @@ let () =
       Buffer.contents buf
   in
   match YAMLx.parse_events input with
-  | exception (Types.Scan_error e) ->
+  | exception (YAMLx.Scan_error e) ->
     Printf.eprintf "Scan error at line %d col %d: %s\n"
       e.pos.line e.pos.column e.msg;
     exit 1
-  | exception (Types.Parse_error e) ->
+  | exception (YAMLx.Parse_error e) ->
     Printf.eprintf "Parse error at line %d col %d: %s\n"
       e.pos.line e.pos.column e.msg;
     exit 1
   | events ->
-    let tree = Event_printer.to_tree events in
+    let tree = YAMLx.events_to_tree events in
     print_string tree
