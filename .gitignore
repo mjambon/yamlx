@@ -4,8 +4,5 @@ _build/
 # Locally-installed dependencies
 _opam/
 
-# Where I put reference material downloaded from the Web
-reference/
-
 # Claude local settings
 .claude/settings.local.json

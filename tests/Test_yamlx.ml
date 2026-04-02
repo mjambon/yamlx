@@ -14,7 +14,7 @@
 
     For case 2 we check that YAMLx raises [Scan_error] or [Parse_error].
 
-    The test suite is loaded from the [reference/yaml-test-suite/src/]
+    The test suite is loaded from the [tests/yaml-test-suite/src/]
     directory relative to the repository root.  The path is hard-coded here
     for simplicity; adjust if the layout changes. *)
 
@@ -28,9 +28,7 @@
 let suite_dir =
   (* __FILE__ expands to the source path at compile time. *)
   let here = Filename.dirname __FILE__ in
-  (* Navigate up one level from tests/ to reach the repo root. *)
-  let root = Filename.concat here ".." in
-  Filename.concat root "reference/yaml-test-suite/src"
+  Filename.concat here "yaml-test-suite/src"
 
 (* ------------------------------------------------------------------ *)
 (* Run a single test case                                                *)
