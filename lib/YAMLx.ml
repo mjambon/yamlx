@@ -103,6 +103,7 @@ type value = Types.value =
   | String of string
   | Seq    of value list
   | Map    of (value * value) list
+[@@deriving eq, show {with_path = false}]
 
 (* ------------------------------------------------------------------ *)
 (* Internal pipeline wiring                                              *)
@@ -130,6 +131,16 @@ let parse_nodes (input : string) : node list =
   let parser_  = make_pipeline input  in
   let composer = Composer.create parser_ in
   Composer.compose_stream composer
+
+(* ------------------------------------------------------------------ *)
+(* Public API — Pretty-printing                                          *)
+(* ------------------------------------------------------------------ *)
+
+let to_yaml = Printer.to_yaml
+
+exception Plain_error = Printer.Plain_error
+
+let to_plain_yaml = Printer.to_plain_yaml
 
 (* ------------------------------------------------------------------ *)
 (* Public API — Typed values                                             *)

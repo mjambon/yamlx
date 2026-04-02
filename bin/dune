@@ -1,5 +1,6 @@
 ; Command-line tool that exercises the yamlx library.
-; It reads YAML from stdin or a file and prints the parsed events.
+; Reads YAML from stdin or a file and prints the result in the chosen format
+; (event tree or pretty-printed YAML).
 
 (executable
  (public_name yamlx)

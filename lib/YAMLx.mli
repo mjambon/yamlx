@@ -107,6 +107,7 @@ type value =
   | String of string
   | Seq    of value list
   | Map    of (value * value) list
+[@@deriving eq, show]
 
 (** {1 Parsing} *)
 
@@ -115,6 +116,29 @@ type value =
     positions.  For simple data extraction, prefer {!of_string}.
     Raises {!Scan_error} or {!Parse_error} on malformed input. *)
 val parse_nodes : string -> node list
+
+(** Serialise [docs] back into a YAML string.
+    Scalar styles ([Plain], [Single_quoted], [Double_quoted], [Literal],
+    [Folded]) and collection flow/block style are preserved.
+    The output is valid YAML 1.2 that round-trips through {!parse_nodes}
+    to equivalent nodes. *)
+val to_yaml : node list -> string
+
+(** Raised by {!to_plain_yaml} when the input uses a feature that plain
+    YAML does not allow: an explicit tag or a complex (non-scalar) mapping
+    key. *)
+exception Plain_error of string
+
+(** Like {!to_yaml} but restricted to a plain subset of YAML:
+    - Aliases are expanded (the resolved node is substituted in place).
+    - Anchor declarations are stripped.
+    - Explicit tags raise {!Plain_error}.
+    - Complex (non-scalar) mapping keys raise {!Plain_error}.
+    - Flow collections are converted to block style.
+
+    The result contains only scalars, block sequences, and block mappings
+    with scalar keys — no YAML-specific features. *)
+val to_plain_yaml : node list -> string
 
 (** Parse [input] and resolve each document to a typed {!value} using
     the YAML 1.2 JSON schema.

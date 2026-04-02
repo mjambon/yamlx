@@ -158,6 +158,86 @@ let unit_tests () =
   ]
 
 (* ------------------------------------------------------------------ *)
+(* Round-trip tests                                                       *)
+(* ------------------------------------------------------------------ *)
+
+type values = YAMLx.value list
+[@@deriving eq, show {with_path = false}]
+
+let yamlx_values = Testo.testable show_values equal_values
+
+(** Round-trip helpers.
+
+    [check_idempotent label input] verifies that printing is stable:
+      yaml1 = to_yaml (parse_nodes input)
+      yaml2 = to_yaml (parse_nodes yaml1)
+      assert yaml1 = yaml2
+
+    [check_values label input] verifies that the resolved values are the
+    same before and after a round trip:
+      of_string input  =  of_string (to_yaml (parse_nodes input)) *)
+let roundtrip_tests () =
+  let check_idempotent input () =
+    let yaml1 = YAMLx.to_yaml (YAMLx.parse_nodes input) in
+    let yaml2 = YAMLx.to_yaml (YAMLx.parse_nodes yaml1) in
+    Testo.(check text) yaml1 yaml2
+  in
+  let check_values input () =
+    let before = YAMLx.of_string input in
+    let after  = YAMLx.of_string (YAMLx.to_yaml (YAMLx.parse_nodes input)) in
+    Testo.(check yamlx_values) before after
+  in
+  let check label input =
+    [ Testo.create ~category:["roundtrip"] (label ^ " (idempotent)")
+        (check_idempotent input)
+    ; Testo.create ~category:["roundtrip"] (label ^ " (values)")
+        (check_values input)
+    ]
+  in
+  List.concat
+  [ check "plain scalar" "hello"
+  ; check "plain scalar int" "42"
+  ; check "plain scalar null" "~"
+  ; check "single-quoted scalar" {|'it''s'|}
+  ; check "double-quoted scalar" {|"hello\nworld"|}
+  ; check "double-quoted with escapes" {|"tab:\there\nand newline"|}
+  ; check "literal block scalar"
+      "key: |\n  line1\n  line2\n"
+  ; check "literal block scalar strip"
+      "key: |-\n  no trailing newline\n"
+  ; check "literal block scalar keep"
+      "key: |+\n  trailing newlines\n\n"
+  ; check "folded block scalar"
+      "key: >\n  folded line\n"
+  ; check "block mapping"
+      "name: Alice\nage: 30\n"
+  ; check "nested block mapping"
+      "outer:\n  inner: value\n  other: 42\n"
+  ; check "block sequence"
+      "- foo\n- bar\n- baz\n"
+  ; check "nested block sequence"
+      "- - a\n  - b\n- - c\n  - d\n"
+  ; check "sequence in mapping"
+      "items:\n  - one\n  - two\ncount: 2\n"
+  ; check "mapping in sequence"
+      "- name: Alice\n  age: 30\n- name: Bob\n  age: 25\n"
+  ; check "flow mapping"
+      "{a: 1, b: 2}\n"
+  ; check "flow sequence"
+      "[foo, bar, baz]\n"
+  ; check "anchor and alias"
+      "a: &x foo\nb: *x\n"
+  ; check "multi-document"
+      "doc1\n---\ndoc2\n"
+  ; check "explicit document start"
+      "---\nfoo\n"
+  ; check "empty mapping"
+      "{}\n"
+  ; check "empty sequence"
+      "[]\n"
+  ]
+
+(* ------------------------------------------------------------------ *)
 (* Build test list from yaml-test-suite                                  *)
 (* ------------------------------------------------------------------ *)
 
@@ -195,4 +275,4 @@ let suite_tests () =
 let () =
   Testo.interpret_argv
     ~project_name:"yamlx"
-    (fun _tags -> unit_tests () @ suite_tests ())
+    (fun _tags -> unit_tests () @ roundtrip_tests () @ suite_tests ())
