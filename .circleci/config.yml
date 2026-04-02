@@ -1,0 +1,157 @@
+#
+# Circle CI configuration. Runs each time we push a new commit to Github.
+#
+version: 2.1
+
+orbs:
+  win: circleci/windows@5.1.0
+
+commands:
+  build:
+    parameters:
+      ocaml_version:
+        type: string
+    steps:
+      - checkout
+      - run:
+          name: Set weekly cache key segment
+          # Compute a number that increments every 7 days.
+          # To force a cache refresh, increment the version suffix
+          # (v1, v2, ...). When a new week starts, use the previous week's
+          # cache as a starting point if available to save time.
+          command: |
+            echo $(( $(date +%s) / 604800 )) > week_id.txt
+            echo $(( $(date +%s) / 604800 - 1 )) > previous_week_id.txt
+      - restore_cache:
+          keys:
+            - opam-ubuntu-<< parameters.ocaml_version >>-v1-{{ checksum "week_id.txt" }}
+            - opam-ubuntu-<< parameters.ocaml_version >>-v1-{{ checksum "previous_week_id.txt" }}
+      - run:
+          name: Install system dependencies
+          command: ./.circleci/setup-system
+      - run:
+          name: Install opam dependencies
+          command: ./.circleci/setup-opam
+      - save_cache:
+          key: opam-ubuntu-<< parameters.ocaml_version >>-v1-{{ checksum "week_id.txt" }}
+          paths:
+            - ~/.opam
+      - run:
+          name: Build
+          command: opam exec -- make
+      - run:
+          name: Test with Make
+          command: opam exec -- make test
+      - run:
+          name: Test with Dune
+          command: opam exec -- dune runtest
+
+jobs:
+  build_latest_ocaml:
+    docker:
+      - image: ocaml/opam:ubuntu-24.04-ocaml-5.3
+    working_directory: ~/yamlx
+    steps:
+      - build:
+          ocaml_version: "5.3"
+
+  build_min_ocaml:
+    docker:
+      - image: ocaml/opam:ubuntu-24.04-ocaml-4.08
+    working_directory: ~/yamlx
+    steps:
+      - build:
+          ocaml_version: "4.08"
+
+  windows_build:
+    executor:
+      name: win/default
+    steps:
+      - run:
+          name: "Enable Git symlinks"
+          # Check out symlinks as copies of the file they're pointing
+          # to because Windows doesn't have symlinks and the default
+          # setting is useless.
+          command: git config --global core.symlinks true
+
+      - checkout
+
+      - run:
+          name: Set weekly cache key segment
+          shell: bash.exe
+          # These commands calculate a number that increments every 7 days
+          command: |
+            echo $(( ( $(date +%s) / 604800 ) )) > week_id.txt
+            echo $(( ( $(date +%s) / 604800 - 1 ) )) > previous_week_id.txt
+
+      # Caching: refreshing a cache entry requires changing the cache
+      # key. We refresh the caches once a week by using an identifier
+      # for the week. To force a refresh, append a version segment
+      # such as '-v123'.
+      - restore_cache:
+          keys:
+            # The first available key is the one being used
+            - opam-win-5.3.0-pkgs-v1-{{ checksum "week_id.txt" }}
+            - opam-win-5.3.0-pkgs-v1-{{ checksum "previous_week_id.txt" }}
+            - opam-win-5.3.0-v1
+
+      - run:
+          name: Install Opam
+          shell: bash.exe
+          command: |
+            url="https://github.com/ocaml/opam/releases/download/2.4.1/opam-2.4.1-x86_64-windows.exe"
+            dst="$HOME/AppData/Local/Microsoft/WindowsApps/opam"
+            curl -L "$url" -o "$dst"
+            opam --version
+
+      - run:
+          # takes about 13 min without caching
+          name: Set up OCaml and opam environment
+          shell: bash.exe
+          no_output_timeout: 30m
+          environment:
+            OPAMROOT: "C:\\Users\\circleci\\AppData\\Local\\opam"
+          command: |
+            if [[ -d ~/AppData/Local/opam ]]; then
+              echo "Using cached opam switch"
+            else
+              opam init --compiler=5.3.0 -y --debug
+            fi
+
+      - save_cache:
+          key: opam-win-5.3.0-v1
+          paths:
+            - ~/AppData/Local/opam
+
+      - run:
+          # This takes about 10 min without caching.
+          # With caching, it still queries opam-repository for package
+          # updates but since most packages are already installed,
+          # it's usually fast (~40 s).
+          name: Install dependencies
+          shell: bash.exe
+          command: opam install ./yamlx.opam -y --deps-only --with-test
+
+      - save_cache:
+          key: opam-win-5.3.0-pkgs-v1-{{ checksum "week_id.txt" }}
+          paths:
+            - ~/AppData/Local/opam
+
+      # We don't call 'make' since Windows doesn't have GNU Make
+      # and relying on it is not encouraged.
+      - run:
+          name: Build
+          shell: bash.exe
+          command: opam exec -- dune build .
+      - run:
+          name: Test
+          shell: bash.exe
+          command: opam exec -- dune runtest
+
+workflows:
+  version: 2
+  build:
+    jobs:
+      - build_latest_ocaml
+      - build_min_ocaml
+      - windows_build
