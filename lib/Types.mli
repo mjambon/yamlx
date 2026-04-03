@@ -28,6 +28,13 @@ type yaml_error = { msg : string; pos : pos }
 exception Scan_error of yaml_error
 exception Parse_error of yaml_error
 
+exception Expansion_limit_exceeded of int
+(** Raised when alias expansion visits more than the configured number of nodes.
+    The payload is the limit that was exceeded. *)
+
+val default_expansion_limit : int
+(** Default node-visit budget for alias expansion (1,000,000). *)
+
 val scan_error : pos -> ('a, unit, string, 'b) format4 -> 'a
 val parse_error : pos -> ('a, unit, string, 'b) format4 -> 'a
 

@@ -140,18 +140,25 @@ let to_yaml = Printer.to_yaml
 
 exception Plain_error = Printer.Plain_error
 
-let to_plain_yaml ?strict = Printer.to_plain_yaml ?strict
+let to_plain_yaml ?strict ?expansion_limit =
+  Printer.to_plain_yaml ?strict ?expansion_limit
 
 (* ------------------------------------------------------------------ *)
 (* Public API — Typed values                                             *)
 (* ------------------------------------------------------------------ *)
 
-let of_string (input : string) : value list =
-  let nodes = parse_nodes input in
-  Resolver.resolve_documents nodes
+exception Expansion_limit_exceeded = Types.Expansion_limit_exceeded
 
-let one_of_string (input : string) : value =
-  match of_string input with
+let default_expansion_limit = Types.default_expansion_limit
+
+let of_string ?(expansion_limit = Types.default_expansion_limit)
+    (input : string) : value list =
+  let nodes = parse_nodes input in
+  Resolver.resolve_documents ~expansion_limit nodes
+
+let one_of_string ?(expansion_limit = Types.default_expansion_limit)
+    (input : string) : value =
+  match of_string ~expansion_limit input with
   | [] -> raise Not_found
   | v :: _ -> v
 
@@ -162,10 +169,13 @@ let one_of_string (input : string) : value =
 let string_of_error (e : yaml_error) : string =
   Printf.sprintf "line %d, column %d: %s" e.pos.line e.pos.column e.msg
 
-let of_string_result (input : string) : (value list, string) result =
-  try Ok (of_string input) with
+let of_string_result ?(expansion_limit = Types.default_expansion_limit)
+    (input : string) : (value list, string) result =
+  try Ok (of_string ~expansion_limit input) with
   | Scan_error e -> Error ("scan error: " ^ string_of_error e)
   | Parse_error e -> Error ("parse error: " ^ string_of_error e)
+  | Expansion_limit_exceeded n ->
+      Error (Printf.sprintf "expansion limit exceeded (%d nodes)" n)
 
 (* ------------------------------------------------------------------ *)
 (* Event printing — internal helpers for tests and the CLI tool         *)

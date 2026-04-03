@@ -143,15 +143,31 @@ let resolve_scalar ~(explicit_tag : string option) ~(style : scalar_style)
 (* Full node resolution                                                  *)
 (* ------------------------------------------------------------------ *)
 
-(** Resolve an entire node tree into a [value] tree. *)
-let rec resolve_node (node : Types.node) : Types.value =
+(** Increment [counter] and raise {!Types.Expansion_limit_exceeded} if it
+    exceeds [limit]. *)
+let tick ~limit ~counter =
+  incr counter;
+  if !counter > limit then raise (Types.Expansion_limit_exceeded limit)
+
+(** Resolve an entire node tree into a [value] tree. [counter] tracks the total
+    number of nodes visited across the whole traversal; [limit] is the upper
+    bound. *)
+let rec resolve_node ~limit ~counter (node : Types.node) : Types.value =
+  tick ~limit ~counter;
   match node with
   | Scalar_node { tag; value; style; _ } ->
       resolve_scalar ~explicit_tag:tag ~style ~value
-  | Sequence_node { items; _ } -> Seq (List.map resolve_node items)
+  | Sequence_node { items; _ } ->
+      Seq (List.map (resolve_node ~limit ~counter) items)
   | Mapping_node { pairs; _ } ->
-      Map (List.map (fun (k, v) -> (resolve_node k, resolve_node v)) pairs)
-  | Alias_node { resolved; _ } -> resolve_node resolved
+      Map
+        (List.map
+           (fun (k, v) ->
+             (resolve_node ~limit ~counter k, resolve_node ~limit ~counter v))
+           pairs)
+  | Alias_node { resolved; _ } -> resolve_node ~limit ~counter resolved
 
-let resolve_documents (nodes : Types.node list) : Types.value list =
-  List.map resolve_node nodes
+let resolve_documents ?(expansion_limit = Types.default_expansion_limit)
+    (nodes : Types.node list) : Types.value list =
+  let counter = ref 0 in
+  List.map (resolve_node ~limit:expansion_limit ~counter) nodes

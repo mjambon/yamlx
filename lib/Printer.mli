@@ -21,8 +21,13 @@ exception Plain_error of string
 (** Raised by {!to_plain_yaml} when the input uses a feature that plain YAML
     does not allow. *)
 
-val to_plain_yaml : ?strict:bool -> Types.node list -> string
+val to_plain_yaml :
+  ?strict:bool -> ?expansion_limit:int -> Types.node list -> string
 (** Like {!to_yaml} but restricted to plain YAML: aliases are expanded, anchor
     declarations are stripped, tags are stripped (or raise {!Plain_error} when
     [~strict:true]), complex mapping keys always raise {!Plain_error}, and all
-    flow collections are converted to block style. *)
+    flow collections are converted to block style.
+
+    [expansion_limit] caps the total number of nodes visited during alias
+    expansion. Raises {!Types.Expansion_limit_exceeded} if exceeded. Defaults to
+    {!Types.default_expansion_limit}. *)

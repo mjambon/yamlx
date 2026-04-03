@@ -276,6 +276,69 @@ let comment_tests () =
   ]
 
 (* ------------------------------------------------------------------ *)
+(* Expansion limit / YAML bomb tests                                     *)
+(* ------------------------------------------------------------------ *)
+
+(** The canonical YAML bomb: 9 levels of 9-element sequences, each level
+    aliasing the previous one. Expanding all aliases would require visiting 9^9
+    ≈ 387 million nodes; the default limit of 1,000,000 stops it early. *)
+let yaml_bomb =
+  {|a: &a ["lol","lol","lol","lol","lol","lol","lol","lol","lol"]
+b: &b [*a,*a,*a,*a,*a,*a,*a,*a,*a]
+c: &c [*b,*b,*b,*b,*b,*b,*b,*b,*b]
+d: &d [*c,*c,*c,*c,*c,*c,*c,*c,*c]
+e: &e [*d,*d,*d,*d,*d,*d,*d,*d,*d]
+f: &f [*e,*e,*e,*e,*e,*e,*e,*e,*e]
+g: &g [*f,*f,*f,*f,*f,*f,*f,*f,*f]
+h: &h [*g,*g,*g,*g,*g,*g,*g,*g,*g]
+i: &i [*h,*h,*h,*h,*h,*h,*h,*h,*h]|}
+
+let expansion_limit_tests () =
+  [
+    Testo.create ~category:[ "expansion-limit" ]
+      "YAML bomb raises Expansion_limit_exceeded via of_string" (fun () ->
+        match YAMLx.of_string yaml_bomb with
+        | exception YAMLx.Expansion_limit_exceeded n ->
+            (* limit payload should equal the configured default *)
+            assert (n = YAMLx.default_expansion_limit)
+        | _ -> failwith "expected Expansion_limit_exceeded");
+    Testo.create ~category:[ "expansion-limit" ]
+      "YAML bomb raises Expansion_limit_exceeded via to_plain_yaml" (fun () ->
+        let nodes = YAMLx.parse_nodes yaml_bomb in
+        match YAMLx.to_plain_yaml nodes with
+        | exception YAMLx.Expansion_limit_exceeded _ -> ()
+        | _ -> failwith "expected Expansion_limit_exceeded");
+    Testo.create ~category:[ "expansion-limit" ]
+      "YAML bomb is Error via of_string_result" (fun () ->
+        match YAMLx.of_string_result yaml_bomb with
+        | Error msg when String.sub msg 0 10 = "expansion " -> ()
+        | Ok _ -> failwith "expected Error"
+        | Error msg -> failwith ("unexpected error message: " ^ msg));
+    Testo.create ~category:[ "expansion-limit" ] "custom low limit is respected"
+      (fun () ->
+        (* Even a tiny document with aliases must respect a limit of 1. *)
+        let input = "x: &x foo\ny: *x\n" in
+        match YAMLx.of_string ~expansion_limit:1 input with
+        | exception YAMLx.Expansion_limit_exceeded 1 -> ()
+        | _ -> failwith "expected Expansion_limit_exceeded 1");
+    Testo.create ~category:[ "expansion-limit" ]
+      "normal aliases within default limit succeed" (fun () ->
+        (* A small number of alias expansions must not be blocked. *)
+        let input = "x: &x foo\na: *x\nb: *x\nc: *x\n" in
+        let values = YAMLx.of_string input in
+        match values with
+        | [ YAMLx.Map pairs ] when List.length pairs = 4 -> ()
+        | _ -> failwith "unexpected value");
+    Testo.create ~category:[ "expansion-limit" ]
+      "to_yaml does not expand aliases and ignores limit" (fun () ->
+        (* to_yaml emits *alias syntax without expansion — the bomb is safe. *)
+        let nodes = YAMLx.parse_nodes yaml_bomb in
+        let out = YAMLx.to_yaml nodes in
+        (* Output should contain alias references, not an explosion *)
+        assert (String.length out < 10_000));
+  ]
+
+(* ------------------------------------------------------------------ *)
 (* Build test list from yaml-test-suite                                  *)
 (* ------------------------------------------------------------------ *)
 
@@ -318,4 +381,5 @@ let suite_tests () =
 
 let () =
   Testo.interpret_argv ~project_name:"yamlx" (fun _tags ->
-      unit_tests () @ roundtrip_tests () @ comment_tests () @ suite_tests ())
+      unit_tests () @ roundtrip_tests () @ comment_tests ()
+      @ expansion_limit_tests () @ suite_tests ())

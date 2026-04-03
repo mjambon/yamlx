@@ -40,6 +40,16 @@ exception Scan_error of yaml_error
 exception Parse_error of yaml_error
 (** Raised when the token stream does not conform to the YAML grammar. *)
 
+exception Expansion_limit_exceeded of int
+(** Raised when alias expansion visits more than the configured number of nodes.
+    The payload is the limit that was exceeded. Use [~expansion_limit] on
+    {!of_string}, {!one_of_string}, {!of_string_result}, or {!to_plain_yaml} to
+    adjust the threshold. See also {!default_expansion_limit}. *)
+
+val default_expansion_limit : int
+(** Default node-visit budget used by all alias-expanding functions (1,000,000).
+*)
+
 (** {1 Scalar styles} *)
 
 (** How a scalar value was written in the source. Preserved in AST nodes so
@@ -145,7 +155,7 @@ exception Plain_error of string
 (** Raised by {!to_plain_yaml} when the input uses a feature that plain YAML
     does not allow: an explicit tag or a complex (non-scalar) mapping key. *)
 
-val to_plain_yaml : ?strict:bool -> node list -> string
+val to_plain_yaml : ?strict:bool -> ?expansion_limit:int -> node list -> string
 (** Like {!to_yaml} but restricted to a plain subset of YAML:
     - Aliases are expanded (the resolved node is substituted in place).
     - Anchor declarations are stripped.
@@ -154,27 +164,34 @@ val to_plain_yaml : ?strict:bool -> node list -> string
     - Complex (non-scalar) mapping keys always raise {!Plain_error}.
     - Flow collections are converted to block style.
 
+    [expansion_limit] caps the total number of nodes visited during alias
+    expansion; raises {!Expansion_limit_exceeded} if exceeded. Defaults to
+    {!default_expansion_limit}.
+
     The result contains only scalars, block sequences, and block mappings with
     scalar keys — no YAML-specific features. *)
 
-val of_string : string -> value list
+val of_string : ?expansion_limit:int -> string -> value list
 (** Parse [input] and resolve each document to a typed {!value} using the YAML
     1.2 JSON schema. Raises {!Scan_error} or {!Parse_error} on malformed input.
-*)
+    Raises {!Expansion_limit_exceeded} if alias expansion exceeds
+    [expansion_limit] (default: {!default_expansion_limit}). *)
 
-val one_of_string : string -> value
+val one_of_string : ?expansion_limit:int -> string -> value
 (** Parse [input] and return the first document's value. Raises [Not_found] if
     the stream contains no documents. Raises {!Scan_error} or {!Parse_error} on
-    malformed input. *)
+    malformed input. Raises {!Expansion_limit_exceeded} if alias expansion
+    exceeds [expansion_limit] (default: {!default_expansion_limit}). *)
 
 (** {1 Error handling} *)
 
 val string_of_error : yaml_error -> string
 (** Format a {!yaml_error} as ["line L, column C: message"]. *)
 
-val of_string_result : string -> (value list, string) result
+val of_string_result :
+  ?expansion_limit:int -> string -> (value list, string) result
 (** Like {!of_string} but returns [Ok values] or [Error msg] instead of raising
-    exceptions. *)
+    exceptions. {!Expansion_limit_exceeded} is also converted to [Error]. *)
 
 (**/**)
 

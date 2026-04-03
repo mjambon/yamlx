@@ -315,9 +315,15 @@ exception Plain_error of string
       tag silently.
     - Raise [Plain_error] on any complex (non-scalar) mapping key.
     - Convert all flow collections to block style. *)
-let rec normalize_plain ~strict node =
+let tick ~limit ~counter =
+  incr counter;
+  if !counter > limit then raise (Types.Expansion_limit_exceeded limit)
+
+let rec normalize_plain ~strict ~limit ~counter node =
+  tick ~limit ~counter;
   match node with
-  | Alias_node { resolved; _ } -> normalize_plain ~strict resolved
+  | Alias_node { resolved; _ } ->
+      normalize_plain ~strict ~limit ~counter resolved
   | Scalar_node { tag = Some t; _ } when strict ->
       raise
         (Plain_error
@@ -334,7 +340,7 @@ let rec normalize_plain ~strict node =
           anchor = None;
           tag = None;
           flow = false;
-          items = List.map (normalize_plain ~strict) r.items;
+          items = List.map (normalize_plain ~strict ~limit ~counter) r.items;
         }
   | Mapping_node { tag = Some t; _ } when strict ->
       raise
@@ -344,7 +350,7 @@ let rec normalize_plain ~strict node =
       let pairs =
         List.map
           (fun (k, v) ->
-            let k' = normalize_plain ~strict k in
+            let k' = normalize_plain ~strict ~limit ~counter k in
             (match k' with
             | Sequence_node _
             | Mapping_node _ ->
@@ -352,7 +358,7 @@ let rec normalize_plain ~strict node =
                   (Plain_error
                      "complex mapping keys are not allowed in plain YAML")
             | _ -> ());
-            (k', normalize_plain ~strict v))
+            (k', normalize_plain ~strict ~limit ~counter v))
           r.pairs
       in
       Mapping_node { r with anchor = None; tag = None; flow = false; pairs }
@@ -395,5 +401,9 @@ let to_yaml (docs : node list) : string =
     declarations are stripped, tags are stripped (or raise {!Plain_error} when
     [strict = true]), complex mapping keys raise {!Plain_error}, and all flow
     collections are converted to block style. *)
-let to_plain_yaml ?(strict = false) (docs : node list) : string =
-  to_yaml (List.map (normalize_plain ~strict) docs)
+let to_plain_yaml ?(strict = false)
+    ?(expansion_limit = Types.default_expansion_limit) (docs : node list) :
+    string =
+  let counter = ref 0 in
+  to_yaml
+    (List.map (normalize_plain ~strict ~limit:expansion_limit ~counter) docs)

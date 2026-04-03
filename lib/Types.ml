@@ -28,6 +28,16 @@ type yaml_error = { msg : string; pos : pos }
 exception Scan_error of yaml_error
 exception Parse_error of yaml_error
 
+exception Expansion_limit_exceeded of int
+(** Raised when alias expansion visits more than the configured number of nodes.
+    The payload is the limit that was exceeded. See {!default_expansion_limit}.
+*)
+
+(** Default maximum number of nodes that may be visited during alias expansion.
+    Applies to both {!Resolver.resolve_documents} and {!Printer.to_plain_yaml}.
+*)
+let default_expansion_limit = 1_000_000
+
 let scan_error pos fmt =
   Printf.ksprintf (fun msg -> raise (Scan_error { msg; pos })) fmt
 
