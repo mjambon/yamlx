@@ -1,31 +1,30 @@
-(** YAML 1.2 parser.
-    Transforms the token stream from the Scanner into an event stream.
+(** YAML 1.2 parser. Transforms the token stream from the Scanner into an event
+    stream.
 
-    The parser implements a recursive-descent grammar matching the YAML
-    1.2.2 specification.  It is driven as a pull-style state machine:
-    [get_event] advances it one step at a time. *)
+    The parser implements a recursive-descent grammar matching the YAML 1.2.2
+    specification. It is driven as a pull-style state machine: [get_event]
+    advances it one step at a time. *)
 
-(** Opaque parser state. *)
 type t
+(** Opaque parser state. *)
 
-(** Create a parser from a Scanner. *)
 val create : Scanner.state -> t
+(** Create a parser from a Scanner. *)
 
-(** Return (without consuming) the next event.
-    Produces a new event if the buffer is empty. *)
 val peek_event : t -> Types.event
+(** Return (without consuming) the next event. Produces a new event if the
+    buffer is empty. *)
 
-(** Consume and return the next event. *)
 val get_event : t -> Types.event
+(** Consume and return the next event. *)
 
-(** True if the next event's kind matches one of [kinds].
-    Fields inside the constructor are ignored; only the constructor tag is
-    checked. *)
 val check_event : t -> Types.event_kind list -> bool
+(** True if the next event's kind matches one of [kinds]. Fields inside the
+    constructor are ignored; only the constructor tag is checked. *)
 
-(** Collect all events into a list.  Reads until [Stream_end]. *)
 val to_event_list : t -> Types.event list
+(** Collect all events into a list. Reads until [Stream_end]. *)
 
-(** Expose the underlying scanner.  Used to drain accumulated comments
-    after parsing is complete via {!Scanner.drain_comments}. *)
 val get_scanner : t -> Scanner.state
+(** Expose the underlying scanner. Used to drain accumulated comments after
+    parsing is complete via {!Scanner.drain_comments}. *)

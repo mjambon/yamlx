@@ -1,32 +1,26 @@
-(** YAML 1.2 scanner (tokeniser).
-    Transforms a character stream (Reader) into a token stream consumed by
-    the Parser.  This is by far the most complex module in the library.
+(** YAML 1.2 scanner (tokeniser). Transforms a character stream (Reader) into a
+    token stream consumed by the Parser. This is by far the most complex module
+    in the library.
 
-    Architecture
-    ~~~~~~~~~~~~
-    The scanner maintains a *token queue* of buffered tokens not yet
-    delivered to the parser.  Tokens are produced lazily: [get_token] calls
-    [fetch_more_tokens] as needed, which dispatches on the current character
-    and appends one or more tokens to the queue.
+    Architecture ~~~~~~~~~~~~ The scanner maintains a *token queue* of buffered
+    tokens not yet delivered to the parser. Tokens are produced lazily:
+    [get_token] calls [fetch_more_tokens] as needed, which dispatches on the
+    current character and appends one or more tokens to the queue.
 
-    Indentation
-    ~~~~~~~~~~~
-    Block collections (sequences and mappings) are delimited by indentation
-    rather than explicit brackets.  The scanner tracks the current indent
-    level and emits synthetic BLOCK_SEQUENCE_START, BLOCK_MAPPING_START, and
-    BLOCK_END tokens when indentation changes.
+    Indentation ~~~~~~~~~~~ Block collections (sequences and mappings) are
+    delimited by indentation rather than explicit brackets. The scanner tracks
+    the current indent level and emits synthetic BLOCK_SEQUENCE_START,
+    BLOCK_MAPPING_START, and BLOCK_END tokens when indentation changes.
 
-    Simple keys
-    ~~~~~~~~~~~
-    YAML allows implicit mapping keys: [foo: bar] where [foo] is a key
-    without a leading [?] marker.  When the scanner emits a scalar (or anchor,
-    alias, or flow collection start) it saves a 'possible simple key' entry for
-    the current flow level.  If a [:]  is later seen, the saved entry is
-    confirmed and a KEY token (plus BLOCK_MAPPING_START if needed) is
-    retroactively inserted before the scalar.  Otherwise the entry expires.
+    Simple keys ~~~~~~~~~~~ YAML allows implicit mapping keys: [foo: bar] where
+    [foo] is a key without a leading [?] marker. When the scanner emits a scalar
+    (or anchor, alias, or flow collection start) it saves a 'possible simple
+    key' entry for the current flow level. If a [:] is later seen, the saved
+    entry is confirmed and a KEY token (plus BLOCK_MAPPING_START if needed) is
+    retroactively inserted before the scalar. Otherwise the entry expires.
 
     This module follows the algorithm of ruamel-yaml (Python), translated to
-    idiomatic OCaml.  Differences from ruamel-yaml are noted inline. *)
+    idiomatic OCaml. Differences from ruamel-yaml are noted inline. *)
 
 open Types
 
@@ -34,51 +28,45 @@ open Types
 (* Token queue (small doubly-ended list, efficient push/pop at front)   *)
 (* ------------------------------------------------------------------ *)
 
-(** Tokens are kept in a simple list; [head] is the next token to return.
-    The list is short in practice (usually < 5 tokens), so O(n) operations
-    are negligible. *)
+(** Tokens are kept in a simple list; [head] is the next token to return. The
+    list is short in practice (usually < 5 tokens), so O(n) operations are
+    negligible. *)
 
 type state = {
-  reader  : Reader.t;
-
+  reader : Reader.t;
   (* Token buffer *)
-  mutable tokens  : token list;
-  mutable tokens_taken : int;   (** total tokens returned so far *)
-
+  mutable tokens : token list;
+  mutable tokens_taken : int;  (** total tokens returned so far *)
   (* Indentation tracking for block context *)
-  mutable indent  : int;        (** current block indent, -1 at stream start *)
-  mutable indents : int list;   (** indent stack *)
-
+  mutable indent : int;  (** current block indent, -1 at stream start *)
+  mutable indents : int list;  (** indent stack *)
   (* Flow context depth (0 = block) *)
   mutable flow_level : int;
   (* Stack of flow collection types: true = sequence, false = mapping *)
   mutable flow_is_sequence : bool list;
-
   (* Simple key tracking *)
   mutable allow_simple_key : bool;
   possible_simple_keys : (int, simple_key) Hashtbl.t;
-    (** Possible simple key for each flow level.
-        Key = flow_level; value = info about the pending candidate. *)
-
+      (** Possible simple key for each flow level. Key = flow_level; value =
+          info about the pending candidate. *)
   (* Stream lifecycle *)
-  mutable done_                    : bool;
-  mutable stream_start_produced   : bool;
-
+  mutable done_ : bool;
+  mutable stream_start_produced : bool;
   (* Comment side-channel (block context only) *)
   comments : (int * bool * string) Queue.t;
-    (** [(source_line, is_line_comment, text)] triples collected while
-        scanning.  [is_line_comment = true] means the ['#'] was preceded
-        only by spaces on the same line (trailing/line comment);
-        [false] means a newline was consumed before the ['#'] (standalone
-        head comment).  Text does not include the leading ['#'] character
-        or the optional space that follows it.
-        Comments inside flow collections ([flow_level > 0]) are discarded. *)
+      (** [(source_line, is_line_comment, text)] triples collected while
+          scanning. [is_line_comment = true] means the ['#'] was preceded only
+          by spaces on the same line (trailing/line comment); [false] means a
+          newline was consumed before the ['#'] (standalone head comment). Text
+          does not include the leading ['#'] character or the optional space
+          that follows it. Comments inside flow collections ([flow_level > 0])
+          are discarded. *)
 }
 
 and simple_key = {
-  sk_token_number : int;   (** absolute token index in the stream *)
-  sk_required     : bool;  (** error if not resolved before becoming stale *)
-  sk_pos          : pos;
+  sk_token_number : int;  (** absolute token index in the stream *)
+  sk_required : bool;  (** error if not resolved before becoming stale *)
+  sk_pos : pos;
 }
 
 (* ------------------------------------------------------------------ *)
@@ -89,26 +77,26 @@ let make_token (tok_kind : token_kind) tok_start_pos tok_end_pos : token =
   { tok_kind; tok_start_pos; tok_end_pos }
 
 (** Append a token to the back of the scanner's token queue. *)
-let push_token scn tok =
-  scn.tokens <- scn.tokens @ [tok]
+let push_token scn tok = scn.tokens <- scn.tokens @ [ tok ]
 
 (** Insert a token at position [pos] (0 = front). *)
 let insert_token scn pos tok =
   let rec go i = function
     | tl when i = pos -> tok :: tl
-    | t :: rest       -> t :: go (i + 1) rest
-    | []              -> [tok]
+    | t :: rest -> t :: go (i + 1) rest
+    | [] -> [ tok ]
   in
   scn.tokens <- go 0 scn.tokens
 
-(** Insert a BLOCK_*_START token after any leading ANCHOR/TAG tokens that
-    are already queued.  ANCHOR and TAG are node properties that must
-    precede the collection-start event, so when the block indicator (- or
-    ?) is encountered the START token must be placed *after* those. *)
+(** Insert a BLOCK_*_START token after any leading ANCHOR/TAG tokens that are
+    already queued. ANCHOR and TAG are node properties that must precede the
+    collection-start event, so when the block indicator (- or ?) is encountered
+    the START token must be placed *after* those. *)
 let insert_collection_start scn tok =
   let rec count_props = function
-    | { tok_kind = Anchor _ ; _ } :: rest
-    | { tok_kind = Tag _    ; _ } :: rest -> 1 + count_props rest
+    | { tok_kind = Anchor _; _ } :: rest
+    | { tok_kind = Tag _; _ } :: rest ->
+        1 + count_props rest
     | _ -> 0
   in
   let pos = count_props scn.tokens in
@@ -137,15 +125,15 @@ let scan_line_break scn =
     advance scn 1;
     scn.allow_simple_key <- true;
     "\n"
-  end else
-    ""
+  end
+  else ""
 
 (* ------------------------------------------------------------------ *)
 (* Indentation management                                               *)
 (* ------------------------------------------------------------------ *)
 
-(** Emit BLOCK_END tokens for every indentation level that is deeper than
-    [col].  Called before each token when in block context. *)
+(** Emit BLOCK_END tokens for every indentation level that is deeper than [col].
+    Called before each token when in block context. *)
 let unwind_indent scn col =
   if scn.flow_level = 0 then begin
     let closed = ref false in
@@ -153,88 +141,93 @@ let unwind_indent scn col =
       closed := true;
       let tok = make_token Block_end (pos scn) (pos scn) in
       push_token scn tok;
-      scn.indent <- (match scn.indents with
-        | hd :: tl -> scn.indents <- tl; hd
-        | []       -> -1)
+      scn.indent <-
+        (match scn.indents with
+        | hd :: tl ->
+            scn.indents <- tl;
+            hd
+        | [] -> -1)
     done;
     (* When blocks were closed, discard simple-key candidates that belong to
        the now-closed indentation levels (they can never be confirmed). *)
     if !closed then
-      Hashtbl.filter_map_inplace (fun _level sk ->
-        if sk.sk_pos.column > scn.indent then None else Some sk
-      ) scn.possible_simple_keys
+      Hashtbl.filter_map_inplace
+        (fun _level sk ->
+          if sk.sk_pos.column > scn.indent then None else Some sk)
+        scn.possible_simple_keys
   end
 
-(** Try to start a new indentation level at [col].
-    Returns [true] and updates the indent stack if [col > scn.indent].
-    When [true] is returned the caller should emit a BLOCK_*_START token. *)
+(** Try to start a new indentation level at [col]. Returns [true] and updates
+    the indent stack if [col > scn.indent]. When [true] is returned the caller
+    should emit a BLOCK_*_START token. *)
 let add_indent scn col =
   if scn.indent < col then begin
     scn.indents <- scn.indent :: scn.indents;
-    scn.indent  <- col;
+    scn.indent <- col;
     true
-  end else
-    false
+  end
+  else false
 
 (* ------------------------------------------------------------------ *)
 (* Simple key management                                                *)
 (* ------------------------------------------------------------------ *)
 
-(** Remove any simple key that has become stale (i.e. its token has already
-    been returned to the parser, or it spans a line boundary in a context
-    that forbids multi-line keys). *)
+(** Remove any simple key that has become stale (i.e. its token has already been
+    returned to the parser, or it spans a line boundary in a context that
+    forbids multi-line keys). *)
 let stale_possible_simple_keys scn =
-  Hashtbl.filter_map_inplace (fun level sk ->
-    if sk.sk_token_number < scn.tokens_taken then begin
-      (* The token was already returned; the key window has closed. *)
-      if sk.sk_required then
-        Types.scan_error sk.sk_pos "could not find expected ':'";
-      None
-    end else if level = 0 && (pos scn).line > sk.sk_pos.line then begin
-      (* In block context, an implicit key candidate must be on a single line.
+  Hashtbl.filter_map_inplace
+    (fun level sk ->
+      if sk.sk_token_number < scn.tokens_taken then begin
+        (* The token was already returned; the key window has closed. *)
+        if sk.sk_required then
+          Types.scan_error sk.sk_pos "could not find expected ':'";
+        None
+      end
+      else if level = 0 && (pos scn).line > sk.sk_pos.line then begin
+        (* In block context, an implicit key candidate must be on a single line.
          If we have moved to a later line without seeing ':', the candidate
          is stale.  Required keys in this situation are a hard error. *)
-      if sk.sk_required then
-        Types.scan_error sk.sk_pos "could not find expected ':'";
-      None
-    end else
-      Some sk
-  ) scn.possible_simple_keys
+        if sk.sk_required then
+          Types.scan_error sk.sk_pos "could not find expected ':'";
+        None
+      end
+      else Some sk)
+    scn.possible_simple_keys
 
-(** Save the current position as a potential simple key for the current
-    flow level. *)
+(** Save the current position as a potential simple key for the current flow
+    level. *)
 let save_possible_simple_key scn =
   if scn.allow_simple_key then begin
     (* A required key: at indent == column and in block context *)
-    let required =
-      scn.flow_level = 0 && scn.indent = column scn
-    in
+    let required = scn.flow_level = 0 && scn.indent = column scn in
     Hashtbl.replace scn.possible_simple_keys scn.flow_level
-      { sk_token_number = next_token_number scn
-      ; sk_required     = required
-      ; sk_pos          = pos scn
+      {
+        sk_token_number = next_token_number scn;
+        sk_required = required;
+        sk_pos = pos scn;
       }
   end
 
-(** Remove the simple key candidate for the current flow level (called when
-    we know the current context cannot produce a key). *)
+(** Remove the simple key candidate for the current flow level (called when we
+    know the current context cannot produce a key). *)
 let remove_possible_simple_key scn =
   match Hashtbl.find_opt scn.possible_simple_keys scn.flow_level with
   | Some sk when sk.sk_required ->
-    Types.scan_error sk.sk_pos "could not find expected ':'"
-  | _ ->
-    Hashtbl.remove scn.possible_simple_keys scn.flow_level
+      Types.scan_error sk.sk_pos "could not find expected ':'"
+  | _ -> Hashtbl.remove scn.possible_simple_keys scn.flow_level
 
-(** Return the minimum (earliest) token number among all pending simple
-    keys, or [max_int] if there are none. *)
+(** Return the minimum (earliest) token number among all pending simple keys, or
+    [max_int] if there are none. *)
 let earliest_possible_simple_key scn =
-  Hashtbl.fold (fun _level sk acc -> min sk.sk_token_number acc)
+  Hashtbl.fold
+    (fun _level sk acc -> min sk.sk_token_number acc)
     scn.possible_simple_keys max_int
 
-(** True if we need more tokens before we can safely return the next one.
-    This is the case when a pending simple key's token is the very next
-    token to be returned (we cannot return it without first deciding whether
-    it is a key). *)
+(** True if we need more tokens before we can safely return the next one. This
+    is the case when a pending simple key's token is the very next token to be
+    returned (we cannot return it without first deciding whether it is a key).
+*)
 let need_more_tokens scn =
   if scn.done_ then false
   else if scn.tokens = [] then true
@@ -244,10 +237,10 @@ let need_more_tokens scn =
 (* Whitespace / comment skipping                                        *)
 (* ------------------------------------------------------------------ *)
 
-(** Skip spaces (and tabs in flow context or after checking) and comments.
-    After each line break [allow_simple_key] is set to [true]. *)
+(** Skip spaces (and tabs in flow context or after checking) and comments. After
+    each line break [allow_simple_key] is set to [true]. *)
 let scan_to_next_token scn =
-  let found      = ref false in
+  let found = ref false in
   (* Tracks whether the current position is on a fresh line (no token yet on
      this line).  Initialised to [true] when we are at column 0 so that a '#'
      at the very start of the file, or right after a linebreak, is correctly
@@ -265,8 +258,8 @@ let scan_to_next_token scn =
       if cp = 0x20 (* SPC *) then begin
         advance scn 1;
         had_white := true
-      end else if cp = 0x09 (* TAB *)
-              && (pos scn).column > 0 then begin
+      end
+      else if cp = 0x09 (* TAB *) && (pos scn).column > 0 then begin
         (* Tabs are allowed as separation whitespace when not at the start of
            a line.  They are forbidden as indentation (column = 0) in both
            block and flow context. *)
@@ -275,22 +268,22 @@ let scan_to_next_token scn =
         (* In block context a tab invalidates any pending simple-key candidate:
            a token that follows a tab cannot serve as an implicit mapping key
            because tab-based indentation is not permitted. *)
-        if not in_flow then
-          scn.allow_simple_key <- false
+        if not in_flow then scn.allow_simple_key <- false
       end
-      else
-        continue_spaces := false
+      else continue_spaces := false
     done;
     (* A '#' starts a comment only when preceded by whitespace (or at col 0).
        A '#' immediately after a token with no intervening space is not a
        comment and must be treated as an error character by the dispatcher. *)
-    if peek scn 0 = 0x23 (* # *) && !had_white then begin
-      if scn.flow_level = 0 then begin
+    if peek scn 0 = 0x23 (* # *) && !had_white then
+      begin if scn.flow_level = 0 then begin
         (* Block context: capture the comment text. *)
-        let comment_line     = (pos scn).line in
-        let is_line_comment  = not !had_newline in
-        advance scn 1;                      (* consume '#' *)
-        if peek scn 0 = 0x20 then advance scn 1;   (* skip one optional space *)
+        let comment_line = (pos scn).line in
+        let is_line_comment = not !had_newline in
+        advance scn 1;
+        (* consume '#' *)
+        if peek scn 0 = 0x20 then advance scn 1;
+        (* skip one optional space *)
         let buf = Buffer.create 64 in
         let continue_comment = ref true in
         while !continue_comment do
@@ -302,19 +295,21 @@ let scan_to_next_token scn =
             advance scn 1
           end
         done;
-        Queue.add (comment_line, is_line_comment, Buffer.contents buf) scn.comments
-      end else begin
+        Queue.add
+          (comment_line, is_line_comment, Buffer.contents buf)
+          scn.comments
+      end
+      else begin
         (* Flow context: discard the comment as before. *)
         let continue_comment = ref true in
         while !continue_comment do
           let cp = peek scn 0 in
           if cp = Char_class.eof || Char_class.is_linebreak cp then
             continue_comment := false
-          else
-            advance scn 1
+          else advance scn 1
         done
       end
-    end;
+      end;
     (* Consume a line break if present *)
     let cp = peek scn 0 in
     if Char_class.is_linebreak cp then begin
@@ -322,10 +317,10 @@ let scan_to_next_token scn =
       (* Inside a block scalar or block mapping, tabs immediately following
          a newline reset the column to 0 before we look for the next token.
          allow_simple_key was already set by scan_line_break. *)
-      if scn.flow_level = 0 then
-        scn.allow_simple_key <- true;
+      if scn.flow_level = 0 then scn.allow_simple_key <- true;
       had_newline := true
-    end else begin
+    end
+    else begin
       had_newline := false;
       found := true
     end
@@ -338,7 +333,9 @@ let scan_to_next_token scn =
 (** Scan a [%YAML] version directive value and return [(major, minor)]. *)
 let scan_yaml_directive_value scn start =
   (* Skip whitespace between '%YAML' and the version *)
-  while peek scn 0 = 0x20 || peek scn 0 = 0x09 do advance scn 1 done;
+  while peek scn 0 = 0x20 || peek scn 0 = 0x09 do
+    advance scn 1
+  done;
   let scan_num () =
     let buf = Buffer.create 4 in
     let cp = ref (peek scn 0) in
@@ -358,15 +355,20 @@ let scan_yaml_directive_value scn start =
   let minor = scan_num () in
   (* After the version, only whitespace followed by an optional comment is allowed *)
   let had_white = ref false in
-  while peek scn 0 = 0x20 || peek scn 0 = 0x09 do advance scn 1; had_white := true done;
+  while peek scn 0 = 0x20 || peek scn 0 = 0x09 do
+    advance scn 1;
+    had_white := true
+  done;
   let cp = peek scn 0 in
   if cp = 0x23 (* # *) && !had_white then
-    while not (Char_class.is_linebreak (peek scn 0)) && peek scn 0 <> Char_class.eof do
+    while
+      (not (Char_class.is_linebreak (peek scn 0)))
+      && peek scn 0 <> Char_class.eof
+    do
       advance scn 1
     done
   else if not (Char_class.is_linebreak cp || cp = Char_class.eof) then
-    Types.scan_error (pos scn)
-      "unexpected extra content on YAML directive line";
+    Types.scan_error (pos scn) "unexpected extra content on YAML directive line";
   let value = Printf.sprintf "%d.%d" major minor in
   let tok = make_token (Directive ("YAML", value)) start (pos scn) in
   push_token scn tok
@@ -374,7 +376,9 @@ let scan_yaml_directive_value scn start =
 (** Scan a [%TAG] directive and push its token. *)
 let scan_tag_directive_value scn start =
   (* handle *)
-  while peek scn 0 = 0x20 || peek scn 0 = 0x09 do advance scn 1 done;
+  while peek scn 0 = 0x20 || peek scn 0 = 0x09 do
+    advance scn 1
+  done;
   let handle_buf = Buffer.create 8 in
   (* tag handle starts with '!' *)
   if peek scn 0 <> 0x21 then
@@ -393,11 +397,14 @@ let scan_tag_directive_value scn start =
   if peek scn 0 = 0x21 then begin
     Buffer.add_char handle_buf '!';
     advance scn 1
-  end else if Buffer.length handle_buf > 1 then
+  end
+  else if Buffer.length handle_buf > 1 then
     (* Named handle without closing '!' is an error *)
     Types.scan_error (pos scn) "expected '!' to end tag handle";
   (* prefix *)
-  while peek scn 0 = 0x20 || peek scn 0 = 0x09 do advance scn 1 done;
+  while peek scn 0 = 0x20 || peek scn 0 = 0x09 do
+    advance scn 1
+  done;
   let prefix_buf = Buffer.create 32 in
   let continue_prefix = ref true in
   while !continue_prefix do
@@ -409,9 +416,10 @@ let scan_tag_directive_value scn start =
       advance scn 1
     end
   done;
-  let tok = make_token
-    (Directive (Buffer.contents handle_buf, Buffer.contents prefix_buf))
-    start (pos scn)
+  let tok =
+    make_token
+      (Directive (Buffer.contents handle_buf, Buffer.contents prefix_buf))
+      start (pos scn)
   in
   push_token scn tok
 
@@ -421,7 +429,8 @@ let fetch_directive scn =
   unwind_indent scn (-1);
   remove_possible_simple_key scn;
   scn.allow_simple_key <- false;
-  advance scn 1; (* consume '%' *)
+  advance scn 1;
+  (* consume '%' *)
   (* Read the directive name *)
   let name_buf = Buffer.create 8 in
   let cp = ref (peek scn 0) in
@@ -431,18 +440,20 @@ let fetch_directive scn =
     cp := peek scn 0
   done;
   let name = Buffer.contents name_buf in
-  (match name with
+  match name with
   | "YAML" -> scan_yaml_directive_value scn start
-  | "TAG"  -> scan_tag_directive_value scn start
-  | _      ->
-    (* Unknown directive: consume and ignore per spec *)
-    let value_buf = Buffer.create 32 in
-    while Char_class.is_directive_char (peek scn 0) do
-      Reader.encode_utf8_to value_buf (peek scn 0);
-      advance scn 1
-    done;
-    push_token scn (make_token (Directive (name, Buffer.contents value_buf)) start (pos scn))
-  )
+  | "TAG" -> scan_tag_directive_value scn start
+  | _ ->
+      (* Unknown directive: consume and ignore per spec *)
+      let value_buf = Buffer.create 32 in
+      while Char_class.is_directive_char (peek scn 0) do
+        Reader.encode_utf8_to value_buf (peek scn 0);
+        advance scn 1
+      done;
+      push_token scn
+        (make_token
+           (Directive (name, Buffer.contents value_buf))
+           start (pos scn))
 
 (* ------------------------------------------------------------------ *)
 (* Document markers                                                     *)
@@ -451,30 +462,40 @@ let fetch_directive scn =
 let fetch_document_start scn =
   let start = pos scn in
   if scn.flow_level > 0 then
-    Types.scan_error start "'---' document-start marker is not allowed inside a flow collection";
+    Types.scan_error start
+      "'---' document-start marker is not allowed inside a flow collection";
   unwind_indent scn (-1);
   Hashtbl.clear scn.possible_simple_keys;
   scn.allow_simple_key <- false;
-  advance scn 3; (* consume '---' *)
+  advance scn 3;
+  (* consume '---' *)
   push_token scn (make_token Document_start start (pos scn))
 
 let fetch_document_end scn =
   let start = pos scn in
   if scn.flow_level > 0 then
-    Types.scan_error start "'...' document-end marker is not allowed inside a flow collection";
+    Types.scan_error start
+      "'...' document-end marker is not allowed inside a flow collection";
   unwind_indent scn (-1);
   Hashtbl.clear scn.possible_simple_keys;
   scn.allow_simple_key <- false;
-  advance scn 3; (* consume '...' *)
+  advance scn 3;
+  (* consume '...' *)
   (* YAML spec: the document-end marker must be followed only by whitespace
      and optionally a comment, then a line break (or end of stream).
      Any other content on the same line is invalid. *)
   let had_white = ref false in
-  while peek scn 0 = 0x20 || peek scn 0 = 0x09 do advance scn 1; had_white := true done;
+  while peek scn 0 = 0x20 || peek scn 0 = 0x09 do
+    advance scn 1;
+    had_white := true
+  done;
   let cp = peek scn 0 in
   if cp = 0x23 (* # *) && !had_white then
     (* Valid trailing comment: consume to end of line *)
-    while not (Char_class.is_linebreak (peek scn 0)) && peek scn 0 <> Char_class.eof do
+    while
+      (not (Char_class.is_linebreak (peek scn 0)))
+      && peek scn 0 <> Char_class.eof
+    do
       advance scn 1
     done
   else if not (Char_class.is_linebreak cp || cp = Char_class.eof) then
@@ -510,7 +531,10 @@ let fetch_flow_sequence_end scn =
     Types.scan_error start "unexpected ']' outside of a flow sequence";
   remove_possible_simple_key scn;
   scn.flow_level <- scn.flow_level - 1;
-  scn.flow_is_sequence <- (match scn.flow_is_sequence with _ :: t -> t | [] -> []);
+  scn.flow_is_sequence <-
+    (match scn.flow_is_sequence with
+    | _ :: t -> t
+    | [] -> []);
   scn.allow_simple_key <- false;
   advance scn 1;
   push_token scn (make_token Flow_sequence_end start (pos scn))
@@ -521,7 +545,10 @@ let fetch_flow_mapping_end scn =
     Types.scan_error start "unexpected '}' outside of a flow mapping";
   remove_possible_simple_key scn;
   scn.flow_level <- scn.flow_level - 1;
-  scn.flow_is_sequence <- (match scn.flow_is_sequence with _ :: t -> t | [] -> []);
+  scn.flow_is_sequence <-
+    (match scn.flow_is_sequence with
+    | _ :: t -> t
+    | [] -> []);
   scn.allow_simple_key <- false;
   advance scn 1;
   push_token scn (make_token Flow_mapping_end start (pos scn))
@@ -545,7 +572,7 @@ let fetch_block_entry scn =
        block context.  Creating a new block collection after a tab is
        invalid (tabs cannot be used for block structure indentation). *)
     let col = (pos scn).column in
-    if not scn.allow_simple_key && scn.indent < col then
+    if (not scn.allow_simple_key) && scn.indent < col then
       Types.scan_error start
         "block sequence entry cannot be introduced after a tab character";
     if add_indent scn col then
@@ -564,7 +591,7 @@ let fetch_key scn =
   let start = pos scn in
   if scn.flow_level = 0 then begin
     let col = (pos scn).column in
-    if not scn.allow_simple_key && scn.indent < col then
+    if (not scn.allow_simple_key) && scn.indent < col then
       Types.scan_error start
         "block mapping key cannot be introduced after a tab character";
     if add_indent scn col then
@@ -573,7 +600,7 @@ let fetch_key scn =
   remove_possible_simple_key scn;
   (* In block context, simple keys ARE allowed after '?' (the key content
      may itself be an implicit key).  In flow context they are not. *)
-  scn.allow_simple_key <- (scn.flow_level = 0);
+  scn.allow_simple_key <- scn.flow_level = 0;
   advance scn 1;
   push_token scn (make_token Key start (pos scn))
 
@@ -585,28 +612,32 @@ let fetch_value scn =
   let start = pos scn in
   (match Hashtbl.find_opt scn.possible_simple_keys scn.flow_level with
   | Some sk ->
-    (* There is a pending simple key: retroactively insert KEY (and possibly
+      (* There is a pending simple key: retroactively insert KEY (and possibly
        BLOCK_MAPPING_START) before the scalar that was the key candidate. *)
-    (* Implicit keys must not span multiple lines, except in flow mappings
+      (* Implicit keys must not span multiple lines, except in flow mappings
        where multiline keys are permitted.  Block context and flow sequences
        both require the key to fit on a single line. *)
-    let in_flow_mapping =
-      scn.flow_level > 0 && (match scn.flow_is_sequence with false :: _ -> true | _ -> false)
-    in
-    if not in_flow_mapping && (pos scn).line > sk.sk_pos.line then
-      Types.scan_error sk.sk_pos
-        "implicit key cannot span multiple lines";
-    Hashtbl.remove scn.possible_simple_keys scn.flow_level;
-    let insert_pos = sk.sk_token_number - scn.tokens_taken in
-    insert_token scn insert_pos (make_token Key sk.sk_pos sk.sk_pos);
-    if scn.flow_level = 0 then begin
-      let col = sk.sk_pos.column in
-      if add_indent scn col then
-        insert_token scn insert_pos (make_token Block_mapping_start sk.sk_pos sk.sk_pos)
-    end;
-    scn.allow_simple_key <- false
+      let in_flow_mapping =
+        scn.flow_level > 0
+        &&
+        match scn.flow_is_sequence with
+        | false :: _ -> true
+        | _ -> false
+      in
+      if (not in_flow_mapping) && (pos scn).line > sk.sk_pos.line then
+        Types.scan_error sk.sk_pos "implicit key cannot span multiple lines";
+      Hashtbl.remove scn.possible_simple_keys scn.flow_level;
+      let insert_pos = sk.sk_token_number - scn.tokens_taken in
+      insert_token scn insert_pos (make_token Key sk.sk_pos sk.sk_pos);
+      if scn.flow_level = 0 then begin
+        let col = sk.sk_pos.column in
+        if add_indent scn col then
+          insert_token scn insert_pos
+            (make_token Block_mapping_start sk.sk_pos sk.sk_pos)
+      end;
+      scn.allow_simple_key <- false
   | None ->
-    (* No simple key: this value indicator starts a new key/value pair
+      (* No simple key: this value indicator starts a new key/value pair
        or is a bare value.
        In block context, a VALUE without a preceding implicit or explicit
        key is only valid when allow_simple_key is true.  allow_simple_key
@@ -614,15 +645,14 @@ let fetch_value scn =
        (see scan_to_next_token).  A VALUE that appears directly after a
        closing ] or } on the same line therefore has allow_simple_key=false
        and is rejected here, matching the YAML 1.2 spec. *)
-    if scn.flow_level = 0 && not scn.allow_simple_key then
-      Types.scan_error (pos scn) "mapping values are not allowed here";
-    if scn.flow_level = 0 then begin
-      let col = (pos scn).column in
-      if add_indent scn col then
-        insert_token scn 0 (make_token Block_mapping_start start start)
-    end;
-    scn.allow_simple_key <- true
-  );
+      if scn.flow_level = 0 && not scn.allow_simple_key then
+        Types.scan_error (pos scn) "mapping values are not allowed here";
+      if scn.flow_level = 0 then begin
+        let col = (pos scn).column in
+        if add_indent scn col then
+          insert_token scn 0 (make_token Block_mapping_start start start)
+      end;
+      scn.allow_simple_key <- true);
   advance scn 1;
   push_token scn (make_token Value start (pos scn))
 
@@ -635,36 +665,34 @@ let fetch_anchor_or_alias scn is_alias =
   let start = pos scn in
   save_possible_simple_key scn;
   scn.allow_simple_key <- false;
-  advance scn 1; (* consume '&' or '*' *)
+  advance scn 1;
+  (* consume '&' or '*' *)
   let buf = Buffer.create 16 in
   while Char_class.is_anchor_char (peek scn 0) do
     Reader.encode_utf8_to buf (peek scn 0);
     advance scn 1
   done;
   let name = Buffer.contents buf in
-  if name = "" then
-    Types.scan_error start "empty anchor or alias name";
-  let kind : token_kind =
-    if is_alias then Alias name else Anchor name
-  in
+  if name = "" then Types.scan_error start "empty anchor or alias name";
+  let kind : token_kind = if is_alias then Alias name else Anchor name in
   push_token scn (make_token kind start (pos scn))
 
 (* ------------------------------------------------------------------ *)
 (* Tags                                                                 *)
 (* ------------------------------------------------------------------ *)
 
-(** Scan a tag and push the token.
-    Three forms:
-    - [!<uri>]      verbatim tag  → handle='', suffix=uri
-    - [!!suffix]    shorthand     → handle='!!', suffix=…
-    - [!handle!suffix] named      → handle='!handle!', suffix=…
-    - [!suffix]     primary       → handle='!', suffix=…
-    - [!]           non-specific  → handle='!', suffix='' *)
+(** Scan a tag and push the token. Three forms:
+    - [!<uri>] verbatim tag → handle='', suffix=uri
+    - [!!suffix] shorthand → handle='!!', suffix=…
+    - [!handle!suffix] named → handle='!handle!', suffix=…
+    - [!suffix] primary → handle='!', suffix=…
+    - [!] non-specific → handle='!', suffix='' *)
 let fetch_tag scn =
   let start = pos scn in
   save_possible_simple_key scn;
   scn.allow_simple_key <- false;
-  advance scn 1; (* consume '!' *)
+  advance scn 1;
+  (* consume '!' *)
   let handle, suffix =
     if peek scn 0 = 0x3C (* < *) then begin
       (* Verbatim tag: !<URI> *)
@@ -673,13 +701,19 @@ let fetch_tag scn =
       let continue_ = ref true in
       while !continue_ do
         let cp = peek scn 0 in
-        if cp = 0x3E (* > *) then (continue_ := false; advance scn 1)
+        if cp = 0x3E (* > *) then (
+          continue_ := false;
+          advance scn 1)
         else if cp = Char_class.eof || Char_class.is_linebreak cp then
           Types.scan_error (pos scn) "unexpected end in verbatim tag"
-        else begin Reader.encode_utf8_to buf cp; advance scn 1 end
+        else begin
+          Reader.encode_utf8_to buf cp;
+          advance scn 1
+        end
       done;
       ("", Buffer.contents buf)
-    end else begin
+    end
+    else begin
       (* Collect the part up to an optional second '!' *)
       let buf = Buffer.create 16 in
       let found_bang = ref false in
@@ -691,12 +725,13 @@ let fetch_tag scn =
           Buffer.add_char buf '!';
           advance scn 1;
           found_bang := true;
-          continue_  := false
-        end else if Char_class.is_tag_char cp && cp <> Char_class.eof then begin
+          continue_ := false
+        end
+        else if Char_class.is_tag_char cp && cp <> Char_class.eof then begin
           Reader.encode_utf8_to buf cp;
           advance scn 1
-        end else
-          continue_ := false
+        end
+        else continue_ := false
       done;
       if !found_bang then begin
         (* handle = '!' + buf so far; scan suffix *)
@@ -708,15 +743,15 @@ let fetch_tag scn =
           if Char_class.is_tag_char cp then begin
             Reader.encode_utf8_to sbuf cp;
             advance scn 1
-          end else
-            continue_ := false
+          end
+          else continue_ := false
         done;
         (handle, Buffer.contents sbuf)
-      end else begin
+      end
+      else begin
         (* Primary handle '!' or just suffix after '!' *)
         let s = Buffer.contents buf in
-        if s = "" then ("!", "")  (* bare ! non-specific tag *)
-        else ("!", s)
+        if s = "" then ("!", "") (* bare ! non-specific tag *) else ("!", s)
       end
     end
   in
@@ -728,8 +763,8 @@ let fetch_tag scn =
 
 type chomping = Strip | Clip | Keep
 
-(** Parse the chomping indicator (+/-) and optional indentation number
-    that immediately follow [|] or [>].  Consume through the end of line. *)
+(** Parse the chomping indicator (+/-) and optional indentation number that
+    immediately follow [|] or [>]. Consume through the end of line. *)
 let scan_block_scalar_indicators scn =
   let chomp = ref Clip in
   let explicit_indent = ref (-1) in
@@ -737,12 +772,20 @@ let scan_block_scalar_indicators scn =
      or vice versa – both orderings are allowed. *)
   let read_indicator () =
     let cp = peek scn 0 in
-    if cp = 0x2B (* + *) then (chomp := Keep;  advance scn 1; true)
-    else if cp = 0x2D (* - *) then (chomp := Strip; advance scn 1; true)
+    if cp = 0x2B (* + *) then (
+      chomp := Keep;
+      advance scn 1;
+      true)
+    else if cp = 0x2D (* - *) then (
+      chomp := Strip;
+      advance scn 1;
+      true)
     else if Char_class.is_digit cp && cp <> 0x30 (* 0 *) then begin
       explicit_indent := cp - 0x30;
-      advance scn 1; true
-    end else false
+      advance scn 1;
+      true
+    end
+    else false
   in
   ignore (read_indicator ());
   ignore (read_indicator ());
@@ -758,26 +801,32 @@ let scan_block_scalar_indicators scn =
   let cp = peek scn 0 in
   if cp = 0x23 (* # *) && !had_white then
     (* Valid comment preceded by whitespace – skip to EOL *)
-    while not (Char_class.is_linebreak (peek scn 0)) && peek scn 0 <> Char_class.eof do
+    while
+      (not (Char_class.is_linebreak (peek scn 0)))
+      && peek scn 0 <> Char_class.eof
+    do
       advance scn 1
     done
   else if not (Char_class.is_linebreak cp || cp = Char_class.eof) then
     Types.scan_error (pos scn)
-      "invalid character in block scalar header (only whitespace and a comment are allowed)";
+      "invalid character in block scalar header (only whitespace and a comment \
+       are allowed)";
   (!chomp, !explicit_indent)
 
 (** Scan a literal ([|]) or folded ([>]) block scalar. *)
 let scan_block_scalar scn style =
   let start = pos scn in
-  advance scn 1; (* consume | or > *)
+  advance scn 1;
+  (* consume | or > *)
   let chomp, explicit_indent = scan_block_scalar_indicators scn in
   (* Consume the line break after the header *)
-  if Char_class.is_linebreak (peek scn 0) then
-    ignore (scan_line_break scn);
+  if Char_class.is_linebreak (peek scn 0) then ignore (scan_line_break scn);
   (* Minimum indentation: at top level (scn.indent = -1) allow content at
      column 0 (min_indent = 0); inside a block, content must exceed its parent. *)
   let min_indent = max 0 (scn.indent + 1) in
-  let block_indent = ref (if explicit_indent > 0 then min_indent + explicit_indent - 1 else 0) in
+  let block_indent =
+    ref (if explicit_indent > 0 then min_indent + explicit_indent - 1 else 0)
+  in
 
   (* ---- Leading blank lines (before first non-blank content) ---- *)
   (* Uses lookahead so we can consume exactly block_indent spaces when a     *)
@@ -791,22 +840,25 @@ let scan_block_scalar scn style =
   let cont = ref true in
   while !cont do
     let look = ref 0 in
-    while peek scn !look = 0x20 do incr look done;
+    while peek scn !look = 0x20 do
+      incr look
+    done;
     let next_cp = peek scn !look in
-    if Char_class.is_linebreak next_cp || next_cp = Char_class.eof then begin
+    if Char_class.is_linebreak next_cp || next_cp = Char_class.eof then
       (* Blank line *)
-      if next_cp = Char_class.eof then
-        cont := false
+      begin if next_cp = Char_class.eof then cont := false
       else begin
         if !look > !max_blank_indent then max_blank_indent := !look;
-        for _ = 1 to !look do advance scn 1 done;
+        for _ = 1 to !look do
+          advance scn 1
+        done;
         Buffer.add_char leading_buf '\n';
         ignore (scan_line_break scn)
       end
-    end else begin
+      end
+    else begin
       (* Non-blank line: auto-detect block_indent from the first content line *)
-      if !block_indent = 0 then
-        block_indent := max min_indent !look;
+      if !block_indent = 0 then block_indent := max min_indent !look;
       (* Blank lines must not be more indented than the first content line *)
       if !max_blank_indent > !block_indent then
         Types.scan_error (pos scn)
@@ -814,17 +866,23 @@ let scan_block_scalar scn style =
       first_content_look := !look;
       (* Consume exactly block_indent spaces (if the line has enough) *)
       if !look >= !block_indent then
-        for _ = 1 to !block_indent do advance scn 1 done;
+        for _ = 1 to !block_indent do
+          advance scn 1
+        done;
       cont := false
     end
   done;
 
   (* Helper: are we at a document-start or document-end marker? *)
   let at_doc_marker () =
-    (peek scn 0 = 0x2D && peek scn 1 = 0x2D && peek scn 2 = 0x2D
-     && (Char_class.is_white (peek scn 3) || peek scn 3 = Char_class.eof))
-    || (peek scn 0 = 0x2E && peek scn 1 = 0x2E && peek scn 2 = 0x2E
-        && (Char_class.is_white (peek scn 3) || peek scn 3 = Char_class.eof))
+    peek scn 0 = 0x2D
+    && peek scn 1 = 0x2D
+    && peek scn 2 = 0x2D
+    && (Char_class.is_white (peek scn 3) || peek scn 3 = Char_class.eof)
+    || peek scn 0 = 0x2E
+       && peek scn 1 = 0x2E
+       && peek scn 2 = 0x2E
+       && (Char_class.is_white (peek scn 3) || peek scn 3 = Char_class.eof)
   in
 
   (* ---- Content lines ---- *)
@@ -843,17 +901,19 @@ let scan_block_scalar scn style =
     && !first_content_look >= !block_indent
     && Char_class.is_blank (peek scn 0)
   in
-  let next_line_col = ref (!first_content_look + (if first_spaced then 1 else 0)) in
+  let next_line_col =
+    ref (!first_content_look + if first_spaced then 1 else 0)
+  in
   let prev_more_indented = ref false in
   let cont = ref true in
 
   while !cont do
     let current_col = (pos scn).column in
-    if current_col < !block_indent
-       || peek scn 0 = Char_class.eof
-       || (!block_indent = 0 && at_doc_marker ())
-    then
-      cont := false
+    if
+      current_col < !block_indent
+      || peek scn 0 = Char_class.eof
+      || (!block_indent = 0 && at_doc_marker ())
+    then cont := false
     else begin
       let this_more_indented = !next_line_col > !block_indent in
 
@@ -863,22 +923,24 @@ let scan_block_scalar scn style =
       if Buffer.length content_buf > 0 then begin
         (match style with
         | Folded ->
-          if !prev_more_indented || this_more_indented then
-            (* Lines adjacent to a more-indented/spaced line: preserve newlines *)
+            if !prev_more_indented || this_more_indented then
+              (* Lines adjacent to a more-indented/spaced line: preserve newlines *)
+              for _ = 1 to !blank_count + 1 do
+                Buffer.add_char content_buf '\n'
+              done
+            else if !blank_count = 0 then
+              Buffer.add_char content_buf ' ' (* fold single newline to space *)
+            else
+              for _ = 1 to !blank_count do
+                Buffer.add_char content_buf '\n'
+              done
+        | Literal
+        | Plain
+        | Single_quoted
+        | Double_quoted ->
             for _ = 1 to !blank_count + 1 do
               Buffer.add_char content_buf '\n'
-            done
-          else if !blank_count = 0 then
-            Buffer.add_char content_buf ' '  (* fold single newline to space *)
-          else
-            for _ = 1 to !blank_count do
-              Buffer.add_char content_buf '\n'
-            done
-        | Literal | Plain | Single_quoted | Double_quoted ->
-          for _ = 1 to !blank_count + 1 do
-            Buffer.add_char content_buf '\n'
-          done
-        );
+            done);
         Buffer.clear trailing_buf;
         blank_count := 0
       end;
@@ -886,13 +948,15 @@ let scan_block_scalar scn style =
       prev_more_indented := this_more_indented;
 
       (* Read the content of this line *)
-      while not (Char_class.is_linebreak (peek scn 0)) && peek scn 0 <> Char_class.eof do
+      while
+        (not (Char_class.is_linebreak (peek scn 0)))
+        && peek scn 0 <> Char_class.eof
+      do
         Reader.encode_utf8_to content_buf (peek scn 0);
         advance scn 1
       done;
 
-      if peek scn 0 = Char_class.eof then
-        cont := false
+      if peek scn 0 = Char_class.eof then cont := false
       else begin
         ignore (scan_line_break scn);
         (* Scan ahead to collect blank lines and locate the next content line *)
@@ -902,41 +966,47 @@ let scan_block_scalar scn style =
         next_line_col := 0;
         while !scanning_ahead do
           let look = ref 0 in
-          while peek scn !look = 0x20 do incr look done;
+          while peek scn !look = 0x20 do
+            incr look
+          done;
           let next_cp = peek scn !look in
           (* A "blank" line has at most block_indent leading spaces then a
              line-break or EOF.  A line with MORE spaces then a line-break is
              a content line whose value is just spaces beyond block_indent. *)
-          if (Char_class.is_linebreak next_cp || next_cp = Char_class.eof)
-             && !look <= !block_indent
-          then begin
-            if next_cp = Char_class.eof then
+          if
+            (Char_class.is_linebreak next_cp || next_cp = Char_class.eof)
+            && !look <= !block_indent
+          then
+            begin if next_cp = Char_class.eof then
               (* EOF: the scalar just ends; no trailing blank line to record *)
               scanning_ahead := false
             else begin
               (* Blank line: record for Keep mode *)
               Buffer.add_char trailing_buf '\n';
-              for _ = 1 to !look do advance scn 1 done;
+              for _ = 1 to !look do
+                advance scn 1
+              done;
               ignore (scan_line_break scn);
               incr blank_count
             end
-          end else begin
+            end
+          else begin
             (* Non-blank content line *)
             (* For folded scalars, treat a line whose first char (after
                block_indent) is whitespace as "more-indented" so that the
                surrounding line breaks are preserved rather than folded. *)
             let spaced =
-              style = Folded
-              && !look >= !block_indent
+              style = Folded && !look >= !block_indent
               && Char_class.is_blank (peek scn !look)
             in
-            next_line_col := !look + (if spaced then 1 else 0);
-            if !look < !block_indent
-               || (!block_indent = 0 && at_doc_marker ())
+            next_line_col := !look + if spaced then 1 else 0;
+            if !look < !block_indent || (!block_indent = 0 && at_doc_marker ())
             then
-              scanning_ahead := false  (* dedented or doc marker: scalar ends *)
+              scanning_ahead := false (* dedented or doc marker: scalar ends *)
             else begin
-              for _ = 1 to !block_indent do advance scn 1 done;
+              for _ = 1 to !block_indent do
+                advance scn 1
+              done;
               scanning_ahead := false
             end
           end
@@ -945,21 +1015,20 @@ let scan_block_scalar scn style =
     end
   done;
 
-  let leading  = Buffer.contents leading_buf in
-  let content  = Buffer.contents content_buf in
+  let leading = Buffer.contents leading_buf in
+  let content = Buffer.contents content_buf in
   let trailing = Buffer.contents trailing_buf in
   let value =
     match chomp with
     | Strip ->
-      (* No trailing newline; leading blank lines only kept with content *)
-      if content = "" then "" else leading ^ content
-    | Clip  ->
-      (* Exactly one trailing newline; leading blank lines only kept with content *)
-      if content = "" then "" else (leading ^ content) ^ "\n"
-    | Keep  ->
-      (* All trailing blank lines preserved; leading included unconditionally *)
-      if content = "" then leading
-      else leading ^ content ^ "\n" ^ trailing
+        (* No trailing newline; leading blank lines only kept with content *)
+        if content = "" then "" else leading ^ content
+    | Clip ->
+        (* Exactly one trailing newline; leading blank lines only kept with content *)
+        if content = "" then "" else (leading ^ content) ^ "\n"
+    | Keep ->
+        (* All trailing blank lines preserved; leading included unconditionally *)
+        if content = "" then leading else leading ^ content ^ "\n" ^ trailing
   in
   push_token scn (make_token (Scalar (value, style)) start (pos scn))
 
@@ -970,21 +1039,26 @@ let scan_block_scalar scn style =
 (** Scan a single-quoted scalar. *)
 let scan_single_quoted_scalar scn =
   let _start = pos scn in
-  advance scn 1; (* consume opening ' *)
+  advance scn 1;
+  (* consume opening ' *)
   let buf = Buffer.create 32 in
   let done_ = ref false in
   while not !done_ do
     let cp = peek scn 0 in
-    if cp = 0x27 (* ' *) then begin
-      if peek scn 1 = 0x27 (* '' → literal ' *) then begin
+    if cp = 0x27 (* ' *) then
+      begin if peek scn 1 = 0x27 (* '' → literal ' *) then begin
         Buffer.add_char buf '\'';
         advance scn 2
-      end else begin
-        advance scn 1; (* closing quote *)
+      end
+      else begin
+        advance scn 1;
+        (* closing quote *)
         done_ := true
       end
-    end else if cp = Char_class.eof then
-      Types.scan_error (pos scn) "unexpected end of input in single-quoted scalar"
+      end
+    else if cp = Char_class.eof then
+      Types.scan_error (pos scn)
+        "unexpected end of input in single-quoted scalar"
     else if Char_class.is_linebreak cp then begin
       (* Fold line break: newline + leading spaces → single space,
          or multiple blank lines → (n-1) newlines.
@@ -992,8 +1066,12 @@ let scan_single_quoted_scalar scn =
       let s = Buffer.contents buf in
       let len = String.length s in
       let trimmed_len = ref len in
-      while !trimmed_len > 0 &&
-            (let c = s.[!trimmed_len - 1] in c = ' ' || c = '\t') do
+      while
+        !trimmed_len > 0
+        &&
+        let c = s.[!trimmed_len - 1] in
+        c = ' ' || c = '\t'
+      do
         decr trimmed_len
       done;
       if !trimmed_len < len then begin
@@ -1003,108 +1081,136 @@ let scan_single_quoted_scalar scn =
       ignore (scan_line_break scn);
       scn.allow_simple_key <- false;
       (* Consume leading spaces on next line *)
-      while peek scn 0 = 0x20 || peek scn 0 = 0x09 do advance scn 1 done;
+      while peek scn 0 = 0x20 || peek scn 0 = 0x09 do
+        advance scn 1
+      done;
       (* Document markers (--- or ...) at column 0 always end a document;
          their presence inside a quoted scalar is an error. *)
       let is_doc_marker () =
         let cp0 = peek scn 0 in
-        (cp0 = 0x2D (* - *) || cp0 = 0x2E (* . *)) &&
-        peek scn 1 = cp0 && peek scn 2 = cp0 &&
-        (pos scn).column = 0 &&
-        (let n = peek scn 3 in Char_class.is_white n || n = Char_class.eof)
+        (cp0 = 0x2D (* - *) || cp0 = 0x2E (* . *))
+        && peek scn 1 = cp0
+        && peek scn 2 = cp0
+        && (pos scn).column = 0
+        &&
+        let n = peek scn 3 in
+        Char_class.is_white n || n = Char_class.eof
       in
       if is_doc_marker () then
         Types.scan_error (pos scn)
           "document marker found inside single-quoted scalar";
       (* In block context, non-blank continuation lines must be more indented
          than the current block level (blank lines are exempt). *)
-      if scn.flow_level = 0
-         && not (Char_class.is_linebreak (peek scn 0))
-         && peek scn 0 <> Char_class.eof
-         && (pos scn).column <= scn.indent then
+      if
+        scn.flow_level = 0
+        && (not (Char_class.is_linebreak (peek scn 0)))
+        && peek scn 0 <> Char_class.eof
+        && (pos scn).column <= scn.indent
+      then
         Types.scan_error (pos scn)
-          "continuation line of single-quoted scalar is not sufficiently indented";
+          "continuation line of single-quoted scalar is not sufficiently \
+           indented";
       (* Consume additional blank lines *)
       let blank_count = ref 0 in
       while Char_class.is_linebreak (peek scn 0) do
         ignore (scan_line_break scn);
         incr blank_count;
-        while peek scn 0 = 0x20 || peek scn 0 = 0x09 do advance scn 1 done
+        while peek scn 0 = 0x20 || peek scn 0 = 0x09 do
+          advance scn 1
+        done
       done;
-      if !blank_count = 0 then
-        Buffer.add_char buf ' '
+      if !blank_count = 0 then Buffer.add_char buf ' '
       else begin
         for _ = 1 to !blank_count do
           Buffer.add_char buf '\n'
         done
       end
-    end else begin
+    end
+    else begin
       Reader.encode_utf8_to buf cp;
       advance scn 1
     end
   done;
   buf
 
-(** Process double-quoted escape sequences.  [advance scn] has already
-    consumed the backslash. *)
+(** Process double-quoted escape sequences. [advance scn] has already consumed
+    the backslash. *)
 let scan_dq_escape scn =
   let cp = peek scn 0 in
   advance scn 1;
   match cp with
-  | 0x30 -> "\x00"  (* \0 *)
-  | 0x61 -> "\x07"  (* \a *)
-  | 0x62 -> "\x08"  (* \b *)
-  | 0x74 | 0x09 -> "\t"  (* \t or literal tab *)
-  | 0x6E -> "\n"    (* \n *)
-  | 0x76 -> "\x0B"  (* \v *)
-  | 0x66 -> "\x0C"  (* \f *)
-  | 0x72 -> "\r"    (* \r *)
-  | 0x65 -> "\x1B"  (* \e *)
-  | 0x20 -> " "     (* space *)
-  | 0x22 -> "\""    (* backslash-double-quote *)
-  | 0x2F -> "/"     (* \/ *)
-  | 0x5C -> "\\"    (* \\ *)
-  | 0x4E ->         (* \N = NEL U+0085 *)
-    let b = Buffer.create 2 in
-    Reader.encode_utf8_to b 0x85; Buffer.contents b
-  | 0x5F ->         (* \_ = non-breaking space U+00A0 *)
-    let b = Buffer.create 2 in
-    Reader.encode_utf8_to b 0xA0; Buffer.contents b
-  | 0x4C ->         (* \L = LS U+2028 *)
-    let b = Buffer.create 3 in
-    Reader.encode_utf8_to b 0x2028; Buffer.contents b
-  | 0x50 ->         (* \P = PS U+2029 *)
-    let b = Buffer.create 3 in
-    Reader.encode_utf8_to b 0x2029; Buffer.contents b
-  | 0x78 ->         (* \xXX *)
-    let hi = Char_class.hex_value (peek scn 0) in
-    let lo = Char_class.hex_value (peek scn 1) in
-    advance scn 2;
-    let b = Buffer.create 2 in
-    Reader.encode_utf8_to b ((hi lsl 4) lor lo); Buffer.contents b
-  | 0x75 ->         (* \uXXXX *)
-    let cp = ref 0 in
-    for _ = 0 to 3 do
-      cp := (!cp lsl 4) lor Char_class.hex_value (peek scn 0);
-      advance scn 1
-    done;
-    let b = Buffer.create 4 in
-    Reader.encode_utf8_to b !cp; Buffer.contents b
-  | 0x55 ->         (* \UXXXXXXXX *)
-    let cp = ref 0 in
-    for _ = 0 to 7 do
-      cp := (!cp lsl 4) lor Char_class.hex_value (peek scn 0);
-      advance scn 1
-    done;
-    let b = Buffer.create 4 in
-    Reader.encode_utf8_to b !cp; Buffer.contents b
+  | 0x30 -> "\x00" (* \0 *)
+  | 0x61 -> "\x07" (* \a *)
+  | 0x62 -> "\x08" (* \b *)
+  | 0x74
+  | 0x09 ->
+      "\t" (* \t or literal tab *)
+  | 0x6E -> "\n" (* \n *)
+  | 0x76 -> "\x0B" (* \v *)
+  | 0x66 -> "\x0C" (* \f *)
+  | 0x72 -> "\r" (* \r *)
+  | 0x65 -> "\x1B" (* \e *)
+  | 0x20 -> " " (* space *)
+  | 0x22 -> "\"" (* backslash-double-quote *)
+  | 0x2F -> "/" (* \/ *)
+  | 0x5C -> "\\" (* \\ *)
+  | 0x4E ->
+      (* \N = NEL U+0085 *)
+      let b = Buffer.create 2 in
+      Reader.encode_utf8_to b 0x85;
+      Buffer.contents b
+  | 0x5F ->
+      (* \_ = non-breaking space U+00A0 *)
+      let b = Buffer.create 2 in
+      Reader.encode_utf8_to b 0xA0;
+      Buffer.contents b
+  | 0x4C ->
+      (* \L = LS U+2028 *)
+      let b = Buffer.create 3 in
+      Reader.encode_utf8_to b 0x2028;
+      Buffer.contents b
+  | 0x50 ->
+      (* \P = PS U+2029 *)
+      let b = Buffer.create 3 in
+      Reader.encode_utf8_to b 0x2029;
+      Buffer.contents b
+  | 0x78 ->
+      (* \xXX *)
+      let hi = Char_class.hex_value (peek scn 0) in
+      let lo = Char_class.hex_value (peek scn 1) in
+      advance scn 2;
+      let b = Buffer.create 2 in
+      Reader.encode_utf8_to b ((hi lsl 4) lor lo);
+      Buffer.contents b
+  | 0x75 ->
+      (* \uXXXX *)
+      let cp = ref 0 in
+      for _ = 0 to 3 do
+        cp := (!cp lsl 4) lor Char_class.hex_value (peek scn 0);
+        advance scn 1
+      done;
+      let b = Buffer.create 4 in
+      Reader.encode_utf8_to b !cp;
+      Buffer.contents b
+  | 0x55 ->
+      (* \UXXXXXXXX *)
+      let cp = ref 0 in
+      for _ = 0 to 7 do
+        cp := (!cp lsl 4) lor Char_class.hex_value (peek scn 0);
+        advance scn 1
+      done;
+      let b = Buffer.create 4 in
+      Reader.encode_utf8_to b !cp;
+      Buffer.contents b
   | _ ->
-    Types.scan_error (pos scn) "unknown escape sequence '\\%s'" (Char_class.show cp)
+      Types.scan_error (pos scn) "unknown escape sequence '\\%s'"
+        (Char_class.show cp)
 
 (** Scan a double-quoted scalar. *)
 let scan_double_quoted_scalar scn =
   let start = pos scn in
-  advance scn 1; (* consume opening double-quote *)
+  advance scn 1;
+  (* consume opening double-quote *)
   let buf = Buffer.create 32 in
   (* Source-whitespace accumulator.  Tabs and spaces that come directly from
      the source (not from escape sequences) are held here until the next
@@ -1112,30 +1218,41 @@ let scan_double_quoted_scalar scn =
      discarded (YAML trailing-whitespace stripping); otherwise they are
      flushed into [buf] first. *)
   let pending_ws = Buffer.create 8 in
-  let flush_pending () = Buffer.add_buffer buf pending_ws; Buffer.clear pending_ws in
+  let flush_pending () =
+    Buffer.add_buffer buf pending_ws;
+    Buffer.clear pending_ws
+  in
   let done_ = ref false in
   while not !done_ do
     let cp = peek scn 0 in
     if cp = 0x22 (* 0x22 = double-quote *) then begin
-      flush_pending ();    (* trailing spaces before '"' are content *)
+      flush_pending ();
+      (* trailing spaces before '"' are content *)
       advance scn 1;
       done_ := true
-    end else if cp = Char_class.eof then
-      Types.scan_error (pos scn) "unexpected end of input in double-quoted scalar"
+    end
+    else if cp = Char_class.eof then
+      Types.scan_error (pos scn)
+        "unexpected end of input in double-quoted scalar"
     else if cp = 0x5C (* \ *) then begin
-      flush_pending ();    (* whitespace before escape is content *)
+      flush_pending ();
+      (* whitespace before escape is content *)
       advance scn 1;
       let next = peek scn 0 in
       if Char_class.is_linebreak next then begin
         (* Line continuation: backslash + newline + leading spaces are ignored *)
         ignore (scan_line_break scn);
         scn.allow_simple_key <- false;
-        while peek scn 0 = 0x20 || peek scn 0 = 0x09 do advance scn 1 done
-      end else begin
+        while peek scn 0 = 0x20 || peek scn 0 = 0x09 do
+          advance scn 1
+        done
+      end
+      else begin
         let esc = scan_dq_escape scn in
         Buffer.add_string buf esc
       end
-    end else if Char_class.is_linebreak cp then begin
+    end
+    else if Char_class.is_linebreak cp then begin
       (* Implicit line folding (no backslash).
          Trailing SOURCE white space before a line break is stripped — that is
          exactly what is in [pending_ws], so we discard it. *)
@@ -1145,18 +1262,27 @@ let scan_double_quoted_scalar scn =
       (* Collect additional blank lines; also consume leading spaces of next
          content line (they are indentation, not content). *)
       let blank_count = ref 0 in
-      while peek scn 0 = 0x20 || peek scn 0 = 0x09 || Char_class.is_linebreak (peek scn 0) do
+      while
+        peek scn 0 = 0x20
+        || peek scn 0 = 0x09
+        || Char_class.is_linebreak (peek scn 0)
+      do
         if Char_class.is_linebreak (peek scn 0) then begin
           ignore (scan_line_break scn);
           incr blank_count
-        end else begin
+        end
+        else begin
           (* In block context (inside a block collection, indent >= 0), a tab
              at column 0 means the tab is being used as indentation, which is
              forbidden in YAML. *)
-          if scn.flow_level = 0 && scn.indent >= 0
-             && peek scn 0 = 0x09 && (pos scn).column = 0 then
+          if
+            scn.flow_level = 0 && scn.indent >= 0
+            && peek scn 0 = 0x09
+            && (pos scn).column = 0
+          then
             Types.scan_error (pos scn)
-              "tab character used as indentation in double-quoted scalar continuation";
+              "tab character used as indentation in double-quoted scalar \
+               continuation";
           advance scn 1
         end
       done;
@@ -1164,10 +1290,13 @@ let scan_double_quoted_scalar scn =
          their presence inside a quoted scalar is an error. *)
       let is_doc_marker () =
         let cp0 = peek scn 0 in
-        (cp0 = 0x2D (* - *) || cp0 = 0x2E (* . *)) &&
-        peek scn 1 = cp0 && peek scn 2 = cp0 &&
-        (pos scn).column = 0 &&
-        (let n = peek scn 3 in Char_class.is_white n || n = Char_class.eof)
+        (cp0 = 0x2D (* - *) || cp0 = 0x2E (* . *))
+        && peek scn 1 = cp0
+        && peek scn 2 = cp0
+        && (pos scn).column = 0
+        &&
+        let n = peek scn 3 in
+        Char_class.is_white n || n = Char_class.eof
       in
       if is_doc_marker () then
         Types.scan_error (pos scn)
@@ -1176,19 +1305,21 @@ let scan_double_quoted_scalar scn =
          the current block level. *)
       if scn.flow_level = 0 && (pos scn).column <= scn.indent then
         Types.scan_error (pos scn)
-          "continuation line of double-quoted scalar is not sufficiently indented";
-      if !blank_count = 0 then
-        Buffer.add_char buf ' '
+          "continuation line of double-quoted scalar is not sufficiently \
+           indented";
+      if !blank_count = 0 then Buffer.add_char buf ' '
       else begin
         for _ = 1 to !blank_count do
           Buffer.add_char buf '\n'
         done
       end
-    end else if cp = 0x20 (* space *) || cp = 0x09 (* tab *) then begin
+    end
+    else if cp = 0x20 (* space *) || cp = 0x09 (* tab *) then begin
       (* Source whitespace: accumulate; flush only when more content follows *)
       Buffer.add_char pending_ws (Char.chr cp);
       advance scn 1
-    end else begin
+    end
+    else begin
       flush_pending ();
       Reader.encode_utf8_to buf cp;
       advance scn 1
@@ -1203,7 +1334,8 @@ let fetch_single_quoted scn =
   save_possible_simple_key scn;
   scn.allow_simple_key <- false;
   let buf = scan_single_quoted_scalar scn in
-  push_token scn (make_token (Scalar (Buffer.contents buf, Single_quoted)) start (pos scn))
+  push_token scn
+    (make_token (Scalar (Buffer.contents buf, Single_quoted)) start (pos scn))
 
 (** Fetch a double-quoted scalar token. *)
 let fetch_double_quoted scn =
@@ -1211,22 +1343,23 @@ let fetch_double_quoted scn =
   save_possible_simple_key scn;
   scn.allow_simple_key <- false;
   let buf = scan_double_quoted_scalar scn in
-  push_token scn (make_token (Scalar (Buffer.contents buf, Double_quoted)) start (pos scn))
+  push_token scn
+    (make_token (Scalar (Buffer.contents buf, Double_quoted)) start (pos scn))
 
 (* ------------------------------------------------------------------ *)
 (* Plain scalars                                                         *)
 (* ------------------------------------------------------------------ *)
 
-(** Scan a plain (unquoted, non-block) scalar.
-    Plain scalars are the trickiest because their termination depends on
-    context (block vs. flow) and on whether the next character starts a
-    structure token ([:], [,], etc.). *)
+(** Scan a plain (unquoted, non-block) scalar. Plain scalars are the trickiest
+    because their termination depends on context (block vs. flow) and on whether
+    the next character starts a structure token ([:], [,], etc.). *)
 let scan_plain_scalar scn =
-  let buf     = Buffer.create 32 in
-  let spaces  = Buffer.create 8  in
-  let indent  = scn.indent + 1   in  (* minimum column to continue *)
+  let buf = Buffer.create 32 in
+  let spaces = Buffer.create 8 in
+  let indent = scn.indent + 1 in
+  (* minimum column to continue *)
   let in_flow = scn.flow_level > 0 in
-  let stop    = ref false in
+  let stop = ref false in
   while not !stop do
     (* Check for termination at current position *)
     let cp0 = peek scn 0 in
@@ -1234,46 +1367,46 @@ let scan_plain_scalar scn =
     let terminated =
       cp0 = Char_class.eof
       || Char_class.is_linebreak cp0
-      || (cp0 = 0x3A (* : *) && Char_class.is_white cp1)   (* ': ' or ':\n' *)
+      || (cp0 = 0x3A (* : *) && Char_class.is_white cp1) (* ': ' or ':\n' *)
       || (cp0 = 0x3A && cp1 = Char_class.eof)
       (* '#' starts a comment only when preceded by whitespace.  At the outer
          loop level this is true iff we have already accumulated content (buf
          or spaces non-empty), i.e., we are in a continuation and spaces were
          consumed before the '#'. *)
-      || (cp0 = 0x23 (* # *) && (Buffer.length buf > 0 || Buffer.length spaces > 0))
+      || cp0 = 0x23
+         (* # *) && (Buffer.length buf > 0 || Buffer.length spaces > 0)
       (* In flow context, also stop at flow indicators and commas *)
       || (in_flow && (cp0 = 0x2C (* , *) || Char_class.is_flow_indicator cp0))
       (* In flow, ':' is an indicator only when followed by an unsafe char
          (whitespace, eof, comma, or flow indicator).  When followed by a safe
          char, ':' is allowed even mid-scalar (e.g. "http://"). *)
-      || (in_flow && cp0 = 0x3A
-          && (Char_class.is_white cp1 || cp1 = Char_class.eof
-              || cp1 = 0x2C || Char_class.is_flow_indicator cp1))
+      || in_flow && cp0 = 0x3A
+         && (Char_class.is_white cp1 || cp1 = Char_class.eof || cp1 = 0x2C
+            || Char_class.is_flow_indicator cp1)
     in
-    if terminated then
-      stop := true
+    if terminated then stop := true
     else begin
       (* Read as many plain characters as possible *)
       let line_buf = Buffer.create 32 in
       let reading = ref true in
-      let prev_cp = ref 0x20 in  (* track previous char for comment detection *)
+      let prev_cp = ref 0x20 in
+      (* track previous char for comment detection *)
       while !reading do
         let cp = peek scn 0 in
         let next = peek scn 1 in
         let end_char =
-          cp = Char_class.eof
-          || Char_class.is_white cp
+          cp = Char_class.eof || Char_class.is_white cp
           || (cp = 0x3A && (Char_class.is_white next || next = Char_class.eof))
           (* '#' is a comment only when preceded by whitespace *)
           || (cp = 0x23 (* # *) && Char_class.is_blank !prev_cp)
           || (in_flow && (cp = 0x2C || Char_class.is_flow_indicator cp))
           (* In flow, ':' is an indicator only when followed by an unsafe char *)
-          || (in_flow && cp = 0x3A
-              && (Char_class.is_white next || next = Char_class.eof
-                  || next = 0x2C || Char_class.is_flow_indicator next))
+          || in_flow && cp = 0x3A
+             && (Char_class.is_white next || next = Char_class.eof
+               || next = 0x2C
+                || Char_class.is_flow_indicator next)
         in
-        if end_char then
-          reading := false
+        if end_char then reading := false
         else begin
           prev_cp := cp;
           Reader.encode_utf8_to line_buf cp;
@@ -1281,8 +1414,7 @@ let scan_plain_scalar scn =
         end
       done;
       let line = Buffer.contents line_buf in
-      if line = "" then
-        stop := true
+      if line = "" then stop := true
       else begin
         scn.allow_simple_key <- false;
         Buffer.add_buffer buf spaces;
@@ -1295,14 +1427,21 @@ let scan_plain_scalar scn =
         if Char_class.is_blank cp then begin
           (* Peek ahead to determine what follows the blanks before consuming. *)
           let ahead = ref 0 in
-          while Char_class.is_blank (peek scn !ahead) do incr ahead done;
+          while Char_class.is_blank (peek scn !ahead) do
+            incr ahead
+          done;
           let following = peek scn !ahead in
-          if Char_class.is_linebreak following || following = Char_class.eof then
+          if Char_class.is_linebreak following || following = Char_class.eof
+          then
             (* Blanks before linebreak/EOF: consume them (stripped during folding) *)
-            for _ = 1 to !ahead do advance scn 1 done
+            for _ = 1 to !ahead do
+              advance scn 1
+            done
           else if following <> 0x23 (* # *) then begin
             (* Blanks between words on the same line: consume + preserve one space *)
-            for _ = 1 to !ahead do advance scn 1 done;
+            for _ = 1 to !ahead do
+              advance scn 1
+            done;
             Buffer.add_char spaces ' '
           end
           (* Blanks immediately before '#': leave unconsumed so that
@@ -1322,52 +1461,67 @@ let scan_plain_scalar scn =
             if Char_class.is_linebreak (peek scn 0) then begin
               ignore (scan_line_break scn);
               incr blank_lines
-            end else begin
+            end
+            else begin
               (* Peek ahead: if all chars before the next line break are blanks
                  (spaces or tabs) this is a whitespace-only line → treat as blank. *)
               let ahead = ref 0 in
-              while Char_class.is_blank (peek scn !ahead) do incr ahead done;
+              while Char_class.is_blank (peek scn !ahead) do
+                incr ahead
+              done;
               if !ahead > 0 && Char_class.is_linebreak (peek scn !ahead) then begin
-                for _ = 1 to !ahead do advance scn 1 done;
+                for _ = 1 to !ahead do
+                  advance scn 1
+                done;
                 ignore (scan_line_break scn);
                 incr blank_lines
-              end else
-                continue_blanks := false
+              end
+              else continue_blanks := false
             end
           done;
           (* Check for document markers that terminate the plain scalar *)
-          if (peek scn 0 = 0x2D && peek scn 1 = 0x2D && peek scn 2 = 0x2D
-              && (Char_class.is_white (peek scn 3) || peek scn 3 = Char_class.eof))
-          || (peek scn 0 = 0x2E && peek scn 1 = 0x2E && peek scn 2 = 0x2E
-              && (Char_class.is_white (peek scn 3) || peek scn 3 = Char_class.eof))
-          then
-            stop := true
+          if
+            peek scn 0 = 0x2D
+            && peek scn 1 = 0x2D
+            && peek scn 2 = 0x2D
+            && (Char_class.is_white (peek scn 3) || peek scn 3 = Char_class.eof)
+            || peek scn 0 = 0x2E
+               && peek scn 1 = 0x2E
+               && peek scn 2 = 0x2E
+               && (Char_class.is_white (peek scn 3)
+                  || peek scn 3 = Char_class.eof)
+          then stop := true
           else begin
             (* In block context, count leading spaces on next line to get
                effective indent, since (pos scn).column is 0 before any spaces
                are consumed. *)
             let dedented =
-              not in_flow &&
-              (let ahead = ref 0 in
-               while peek scn !ahead = 0x20 do incr ahead done;
-               !ahead < indent)
+              (not in_flow)
+              &&
+              let ahead = ref 0 in
+              while peek scn !ahead = 0x20 do
+                incr ahead
+              done;
+              !ahead < indent
             in
-            if dedented then
-              stop := true
+            if dedented then stop := true
             else begin
               (* Consume leading indentation of the continuation line so the
                  inner loop starts at actual content, not at indentation spaces.
                  Tabs after the spaces are also consumed (legal content separators). *)
-              while Char_class.is_blank (peek scn 0) do advance scn 1 done;
+              while Char_class.is_blank (peek scn 0) do
+                advance scn 1
+              done;
               if !blank_lines = 0 then
-                Buffer.add_char spaces ' '  (* fold one newline to space *)
+                Buffer.add_char spaces ' ' (* fold one newline to space *)
               else
                 for _ = 1 to !blank_lines do
                   Buffer.add_char spaces '\n'
                 done
             end
           end
-        end else if not (Char_class.is_blank cp) then
+        end
+        else if not (Char_class.is_blank cp) then
           (* If we didn't start with a blank and didn't hit a line break, stop.
              (If we consumed blanks above, the outer loop will re-check.) *)
           stop := true
@@ -1389,7 +1543,7 @@ let fetch_plain scn =
 (* ------------------------------------------------------------------ *)
 
 let fetch_stream_start scn =
-  scn.indent  <- -1;
+  scn.indent <- -1;
   scn.indents <- [];
   push_token scn (make_token Stream_start (pos scn) (pos scn));
   scn.stream_start_produced <- true
@@ -1409,28 +1563,28 @@ let fetch_stream_end scn =
 (* Main dispatch                                                         *)
 (* ------------------------------------------------------------------ *)
 
-(** True if the three characters at the current position form [---] or [...]
-    and are immediately followed by whitespace or EOF. *)
+(** True if the three characters at the current position form [---] or [...] and
+    are immediately followed by whitespace or EOF. *)
 let check_document_marker scn ch =
   peek scn 0 = ch
   && peek scn 1 = ch
   && peek scn 2 = ch
-  && ((pos scn).column = 0)
-  && (let n = peek scn 3 in
-      Char_class.is_white n || n = Char_class.eof)
+  && (pos scn).column = 0
+  &&
+  let n = peek scn 3 in
+  Char_class.is_white n || n = Char_class.eof
 
 (** True if the current character starts a value indicator ([:] followed by
     whitespace, EOF, or a flow indicator, or a pending simple key in flow). *)
 let check_value scn =
   let next = peek scn 1 in
-  Char_class.is_white next
-  || next = Char_class.eof
+  Char_class.is_white next || next = Char_class.eof
   || Char_class.is_flow_indicator next
   || (scn.flow_level > 0 && next = 0x2C (* , *))
   || (scn.flow_level > 0 && Hashtbl.mem scn.possible_simple_keys scn.flow_level)
 
-(** True if the current [-] is a block sequence entry (not a plain scalar
-    that starts with [-]). *)
+(** True if the current [-] is a block sequence entry (not a plain scalar that
+    starts with [-]). *)
 let check_block_entry scn =
   let next = peek scn 1 in
   Char_class.is_white next || next = Char_class.eof
@@ -1450,84 +1604,73 @@ let rec fetch_more_tokens scn =
      than the surrounding block context (col > scn.indent).  When scn.indent
      is -1 (document root) there is no surrounding block, so any column is
      fine.  EOF is also exempt. *)
-  if scn.flow_level > 0
-     && scn.indent >= 0
-     && (pos scn).column <= scn.indent
-     && cp <> Char_class.eof then
+  if
+    scn.flow_level > 0 && scn.indent >= 0
+    && (pos scn).column <= scn.indent
+    && cp <> Char_class.eof
+  then
     Types.scan_error (pos scn)
-      "flow collection content must be more indented than the surrounding block context";
-  if not scn.stream_start_produced then
-    fetch_stream_start scn
-  else if cp = Char_class.eof then
-    fetch_stream_end scn
-  else if cp = 0x25 (* % *) && (pos scn).column = 0 then
-    fetch_directive scn
-  else if check_document_marker scn 0x2D (* - *) then
-    fetch_document_start scn
-  else if check_document_marker scn 0x2E (* . *) then
-    fetch_document_end scn
-  else if cp = 0x5B (* [ *) then
-    fetch_flow_sequence_start scn
-  else if cp = 0x7B (* { *) then
-    fetch_flow_mapping_start scn
-  else if cp = 0x5D (* ] *) then
-    fetch_flow_sequence_end scn
-  else if cp = 0x7D (* } *) then
-    fetch_flow_mapping_end scn
-  else if cp = 0x2C (* , *) then
-    fetch_flow_entry scn
-  else if cp = 0x2D (* - *) && check_block_entry scn then
-    fetch_block_entry scn
-  else if cp = 0x3F (* ? *) && check_explicit_key scn then
-    fetch_key scn
-  else if cp = 0x3A (* : *) && check_value scn then
-    fetch_value scn
-  else if cp = 0x2A (* * *) then
-    fetch_anchor_or_alias scn true
-  else if cp = 0x26 (* & *) then
-    fetch_anchor_or_alias scn false
-  else if cp = 0x21 (* ! *) then
-    fetch_tag scn
+      "flow collection content must be more indented than the surrounding \
+       block context";
+  if not scn.stream_start_produced then fetch_stream_start scn
+  else if cp = Char_class.eof then fetch_stream_end scn
+  else if cp = 0x25 (* % *) && (pos scn).column = 0 then fetch_directive scn
+  else if check_document_marker scn 0x2D (* - *) then fetch_document_start scn
+  else if check_document_marker scn 0x2E (* . *) then fetch_document_end scn
+  else if cp = 0x5B (* [ *) then fetch_flow_sequence_start scn
+  else if cp = 0x7B (* { *) then fetch_flow_mapping_start scn
+  else if cp = 0x5D (* ] *) then fetch_flow_sequence_end scn
+  else if cp = 0x7D (* } *) then fetch_flow_mapping_end scn
+  else if cp = 0x2C (* , *) then fetch_flow_entry scn
+  else if cp = 0x2D (* - *) && check_block_entry scn then fetch_block_entry scn
+  else if cp = 0x3F (* ? *) && check_explicit_key scn then fetch_key scn
+  else if cp = 0x3A (* : *) && check_value scn then fetch_value scn
+  else if cp = 0x2A (* * *) then fetch_anchor_or_alias scn true
+  else if cp = 0x26 (* & *) then fetch_anchor_or_alias scn false
+  else if cp = 0x21 (* ! *) then fetch_tag scn
   else if cp = 0x7C (* | *) && scn.flow_level = 0 then
     scan_block_scalar scn Literal
   else if cp = 0x3E (* > *) && scn.flow_level = 0 then
     scan_block_scalar scn Folded
-  else if cp = 0x27 (* ' *) then
-    fetch_single_quoted scn
-  else if cp = 0x22 (* ' *) then
-    fetch_double_quoted scn
+  else if cp = 0x27 (* ' *) then fetch_single_quoted scn
+  else if cp = 0x22 (* ' *) then fetch_double_quoted scn
   else if cp = 0x09 (* TAB *) && scn.flow_level > 0 then begin
     (* A tab at the start of a line (column 0) inside a flow collection.
        Blank lines and lines starting with flow-structure characters (], }, ,)
        are OK; a tab followed by YAML content is a parse error since tabs may
        not serve as indentation. *)
-    while peek scn 0 = 0x09 do advance scn 1 done;
+    while peek scn 0 = 0x09 do
+      advance scn 1
+    done;
     let next_cp = peek scn 0 in
-    if Char_class.is_linebreak next_cp || next_cp = Char_class.eof
-       || next_cp = 0x5D (* ] *) || next_cp = 0x7D (* } *)
-       || next_cp = 0x2C (* , *) then
-      fetch_more_tokens scn  (* OK: blank line or flow-structure token *)
+    if
+      Char_class.is_linebreak next_cp
+      || next_cp = Char_class.eof || next_cp = 0x5D (* ] *) || next_cp = 0x7D
+      (* } *) || next_cp = 0x2C
+    (* , *)
+    then fetch_more_tokens scn (* OK: blank line or flow-structure token *)
     else
       Types.scan_error (pos scn)
-        "tab character cannot be used to indent content inside a flow collection"
+        "tab character cannot be used to indent content inside a flow \
+         collection"
   end
   else if cp = 0x09 (* TAB *) && scn.flow_level = 0 then begin
     (* A tab at the start of a line in block context: only legal before a
        flow-collection indicator ([ or {).  Consume the tab(s) and re-dispatch
        when the next character is a flow indicator; otherwise it is an illegal
        use of tab as block indentation. *)
-    while peek scn 0 = 0x09 do advance scn 1 done;
+    while peek scn 0 = 0x09 do
+      advance scn 1
+    done;
     let next_cp = peek scn 0 in
     if next_cp = 0x5B (* [ *) || next_cp = 0x7B (* { *) then
-      fetch_more_tokens scn  (* re-dispatch without the leading tab(s) *)
+      fetch_more_tokens scn (* re-dispatch without the leading tab(s) *)
     else
       Types.scan_error (pos scn)
         "tab character cannot be used as block indentation"
   end
-  else if can_start_plain scn cp then
-    fetch_plain scn
-  else
-    Types.scan_error (pos scn) "unexpected character %s" (Char_class.show cp)
+  else if can_start_plain scn cp then fetch_plain scn
+  else Types.scan_error (pos scn) "unexpected character %s" (Char_class.show cp)
 
 and can_start_plain scn cp =
   let in_flow = scn.flow_level > 0 in
@@ -1535,14 +1678,15 @@ and can_start_plain scn cp =
   (* Per YAML spec, ':', '-', '?' can start a plain scalar when the following
      character is not a safe separator. *)
   if cp = 0x3A (* : *) then
-    not (Char_class.is_white next || next = Char_class.eof
-         || (in_flow && (next = 0x2C || Char_class.is_flow_indicator next)))
+    not
+      (Char_class.is_white next || next = Char_class.eof
+      || (in_flow && (next = 0x2C || Char_class.is_flow_indicator next)))
   else if cp = 0x2D (* - *) || cp = 0x3F (* ? *) then
     if in_flow then
-      not (Char_class.is_white next || next = Char_class.eof
-           || next = 0x2C || Char_class.is_flow_indicator next)
-    else
-      not (Char_class.is_white next || next = Char_class.eof)
+      not
+        (Char_class.is_white next || next = Char_class.eof || next = 0x2C
+        || Char_class.is_flow_indicator next)
+    else not (Char_class.is_white next || next = Char_class.eof)
   else if in_flow then Char_class.can_start_plain_flow cp
   else Char_class.can_start_plain_block cp
 
@@ -1551,23 +1695,24 @@ and can_start_plain scn cp =
 (* ------------------------------------------------------------------ *)
 
 let create (reader : Reader.t) : state =
-  { reader
-  ; tokens         = []
-  ; tokens_taken   = 0
-  ; indent         = -1
-  ; indents        = []
-  ; flow_level     = 0
-  ; flow_is_sequence = []
-  ; allow_simple_key = true
-  ; possible_simple_keys = Hashtbl.create 4
-  ; done_                = false
-  ; stream_start_produced = false
-  ; comments             = Queue.create ()
+  {
+    reader;
+    tokens = [];
+    tokens_taken = 0;
+    indent = -1;
+    indents = [];
+    flow_level = 0;
+    flow_is_sequence = [];
+    allow_simple_key = true;
+    possible_simple_keys = Hashtbl.create 4;
+    done_ = false;
+    stream_start_produced = false;
+    comments = Queue.create ();
   }
 
 (** Return all accumulated comments in source order as
-    [(line, is_line_comment, text)] triples.
-    Typically called after the full token stream has been consumed. *)
+    [(line, is_line_comment, text)] triples. Typically called after the full
+    token stream has been consumed. *)
 let drain_comments (scn : state) : (int * bool * string) list =
   Queue.fold (fun acc x -> x :: acc) [] scn.comments |> List.rev
 
@@ -1582,29 +1727,28 @@ let peek_token (scn : state) : token =
   ensure_token scn;
   match scn.tokens with
   | t :: _ -> t
-  | []     -> failwith "Scanner.peek_token: internal error: no token available"
+  | [] -> failwith "Scanner.peek_token: internal error: no token available"
 
 (** Consume and return the next token. *)
 let get_token (scn : state) : token =
   ensure_token scn;
   match scn.tokens with
   | t :: rest ->
-    scn.tokens       <- rest;
-    scn.tokens_taken <- scn.tokens_taken + 1;
-    t
-  | [] ->
-    failwith "Scanner.get_token: internal error: no token available"
+      scn.tokens <- rest;
+      scn.tokens_taken <- scn.tokens_taken + 1;
+      t
+  | [] -> failwith "Scanner.get_token: internal error: no token available"
 
 (** True if the next token's kind is in [kinds]. *)
 let check_token (scn : state) (kinds : token_kind list) : bool =
   ensure_token scn;
   match scn.tokens with
   | t :: _ -> List.mem t.tok_kind kinds
-  | []     -> false
+  | [] -> false
 
 (** Peek at the kind of the next token without consuming it. *)
 let peek_kind (scn : state) : token_kind option =
   ensure_token scn;
   match scn.tokens with
   | t :: _ -> Some t.tok_kind
-  | []     -> None
+  | [] -> None

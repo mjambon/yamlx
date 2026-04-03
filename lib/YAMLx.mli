@@ -15,99 +15,96 @@
       | Error msg -> ...
     ]}
 
-    Errors are reported by raising {!Scan_error} or {!Parse_error}.
-    Use {!of_string_result} to get a [result] instead. *)
+    Errors are reported by raising {!Scan_error} or {!Parse_error}. Use
+    {!of_string_result} to get a [result] instead. *)
 
 (** {1 Source positions} *)
 
-(** A location in the YAML source text.
-    [line] is 1-based; [column] is 0-based (Unicode codepoints from the
-    start of the line, matching the YAML specification). *)
 type pos = {
-  line   : int;
+  line : int;
   column : int;
   offset : int;  (** codepoint index from the start of the input *)
 }
+(** A location in the YAML source text. [line] is 1-based; [column] is 0-based
+    (Unicode codepoints from the start of the line, matching the YAML
+    specification). *)
 
 (** {1 Errors} *)
 
-type yaml_error = {
-  msg : string;
-  pos : pos;
-}
+type yaml_error = { msg : string; pos : pos }
 
+exception Scan_error of yaml_error
 (** Raised when the input contains invalid YAML syntax at the scanning
     (tokenisation) stage. *)
-exception Scan_error  of yaml_error
 
-(** Raised when the token stream does not conform to the YAML grammar. *)
 exception Parse_error of yaml_error
+(** Raised when the token stream does not conform to the YAML grammar. *)
 
 (** {1 Scalar styles} *)
 
-(** How a scalar value was written in the source.
-    Preserved in AST nodes so callers can distinguish, for example, a
-    quoted empty string from an unquoted null. *)
+(** How a scalar value was written in the source. Preserved in AST nodes so
+    callers can distinguish, for example, a quoted empty string from an unquoted
+    null. *)
 type scalar_style =
-  | Plain          (** unquoted, e.g. [foo] *)
+  | Plain  (** unquoted, e.g. [foo] *)
   | Single_quoted  (** e.g. ['foo'] *)
   | Double_quoted  (** e.g. ["foo"] *)
-  | Literal        (** block scalar [|]: newlines preserved *)
-  | Folded         (** block scalar [>]: newlines folded to spaces *)
+  | Literal  (** block scalar [|]: newlines preserved *)
+  | Folded  (** block scalar [>]: newlines folded to spaces *)
 
 (** {1 AST nodes} *)
 
-(** An in-memory representation of a parsed YAML document that preserves
-    all source-level detail: tags, anchors, scalar styles, source positions,
-    and — on a best-effort basis — comments.
+(** An in-memory representation of a parsed YAML document that preserves all
+    source-level detail: tags, anchors, scalar styles, source positions, and —
+    on a best-effort basis — comments.
 
-    {b Comment preservation} is a best-effort heuristic.  Comments inside flow
-    collections are dropped.  The attachment rules and field semantics may
-    change in future versions.
+    {b Comment preservation} is a best-effort heuristic. Comments inside flow
+    collections are dropped. The attachment rules and field semantics may change
+    in future versions.
 
     - [head_comments]: standalone comment lines that appear immediately before
-      the node in the source.  Each string is one comment line's text,
-      without the leading ['#'] character.
-    - [line_comment]: a comment appearing on the same source line as the
-      node, after its content.  Text does not include the leading ['#'].
+      the node in the source. Each string is one comment line's text, without
+      the leading ['#'] character.
+    - [line_comment]: a comment appearing on the same source line as the node,
+      after its content. Text does not include the leading ['#'].
     - [foot_comments] (collections only): standalone comment lines appearing
       after the last child of the collection, before the next sibling. *)
 type node =
   | Scalar_node of {
-      anchor        : string option;  (** [&name] if present *)
-      tag           : string option;  (** resolved tag URI if present *)
-      value         : string;
-      style         : scalar_style;
-      pos           : pos;
+      anchor : string option;  (** [&name] if present *)
+      tag : string option;  (** resolved tag URI if present *)
+      value : string;
+      style : scalar_style;
+      pos : pos;
       head_comments : string list;
-      line_comment  : string option;
+      line_comment : string option;
     }
   | Sequence_node of {
-      anchor        : string option;
-      tag           : string option;
-      items         : node list;
-      flow          : bool;           (** true for [[a, b]] style, false for block *)
-      pos           : pos;
+      anchor : string option;
+      tag : string option;
+      items : node list;
+      flow : bool;  (** true for [[a, b]] style, false for block *)
+      pos : pos;
       head_comments : string list;
-      line_comment  : string option;
+      line_comment : string option;
       foot_comments : string list;
     }
   | Mapping_node of {
-      anchor        : string option;
-      tag           : string option;
-      pairs         : (node * node) list;
-      flow          : bool;           (** true for [{a: b}] style, false for block *)
-      pos           : pos;
+      anchor : string option;
+      tag : string option;
+      pairs : (node * node) list;
+      flow : bool;  (** true for [{a: b}] style, false for block *)
+      pos : pos;
       head_comments : string list;
-      line_comment  : string option;
+      line_comment : string option;
       foot_comments : string list;
     }
   | Alias_node of {
-      name          : string;  (** the anchor name, without the [*] *)
-      resolved      : node;
-      pos           : pos;
+      name : string;  (** the anchor name, without the [*] *)
+      resolved : node;
+      pos : pos;
       head_comments : string list;
-      line_comment  : string option;
+      line_comment : string option;
     }
 
 (** {1 Typed values} *)
@@ -122,34 +119,33 @@ type node =
     - Everything else, and all quoted or block scalars → {!String} *)
 type value =
   | Null
-  | Bool   of bool
-  | Int    of int64
-  | Float  of float
+  | Bool of bool
+  | Int of int64
+  | Float of float
   | String of string
-  | Seq    of value list
-  | Map    of (value * value) list
+  | Seq of value list
+  | Map of (value * value) list
 [@@deriving eq, show]
 
 (** {1 Parsing} *)
 
-(** Parse [input] and return one {!node} per YAML document.
-    Use this when you need tags, anchors, scalar styles, or source
-    positions.  For simple data extraction, prefer {!of_string}.
-    Raises {!Scan_error} or {!Parse_error} on malformed input. *)
 val parse_nodes : string -> node list
+(** Parse [input] and return one {!node} per YAML document. Use this when you
+    need tags, anchors, scalar styles, or source positions. For simple data
+    extraction, prefer {!of_string}. Raises {!Scan_error} or {!Parse_error} on
+    malformed input. *)
 
-(** Serialise [docs] back into a YAML string.
-    Scalar styles ([Plain], [Single_quoted], [Double_quoted], [Literal],
-    [Folded]) and collection flow/block style are preserved.
-    The output is valid YAML 1.2 that round-trips through {!parse_nodes}
-    to equivalent nodes. *)
 val to_yaml : node list -> string
+(** Serialise [docs] back into a YAML string. Scalar styles ([Plain],
+    [Single_quoted], [Double_quoted], [Literal], [Folded]) and collection
+    flow/block style are preserved. The output is valid YAML 1.2 that
+    round-trips through {!parse_nodes} to equivalent nodes. *)
 
-(** Raised by {!to_plain_yaml} when the input uses a feature that plain
-    YAML does not allow: an explicit tag or a complex (non-scalar) mapping
-    key. *)
 exception Plain_error of string
+(** Raised by {!to_plain_yaml} when the input uses a feature that plain YAML
+    does not allow: an explicit tag or a complex (non-scalar) mapping key. *)
 
+val to_plain_yaml : ?strict:bool -> node list -> string
 (** Like {!to_yaml} but restricted to a plain subset of YAML:
     - Aliases are expanded (the resolved node is substituted in place).
     - Anchor declarations are stripped.
@@ -158,28 +154,27 @@ exception Plain_error of string
     - Complex (non-scalar) mapping keys always raise {!Plain_error}.
     - Flow collections are converted to block style.
 
-    The result contains only scalars, block sequences, and block mappings
-    with scalar keys — no YAML-specific features. *)
-val to_plain_yaml : ?strict:bool -> node list -> string
+    The result contains only scalars, block sequences, and block mappings with
+    scalar keys — no YAML-specific features. *)
 
-(** Parse [input] and resolve each document to a typed {!value} using
-    the YAML 1.2 JSON schema.
-    Raises {!Scan_error} or {!Parse_error} on malformed input. *)
 val of_string : string -> value list
+(** Parse [input] and resolve each document to a typed {!value} using the YAML
+    1.2 JSON schema. Raises {!Scan_error} or {!Parse_error} on malformed input.
+*)
 
-(** Parse [input] and return the first document's value.
-    Raises [Not_found] if the stream contains no documents.
-    Raises {!Scan_error} or {!Parse_error} on malformed input. *)
 val one_of_string : string -> value
+(** Parse [input] and return the first document's value. Raises [Not_found] if
+    the stream contains no documents. Raises {!Scan_error} or {!Parse_error} on
+    malformed input. *)
 
 (** {1 Error handling} *)
 
-(** Format a {!yaml_error} as ["line L, column C: message"]. *)
 val string_of_error : yaml_error -> string
+(** Format a {!yaml_error} as ["line L, column C: message"]. *)
 
-(** Like {!of_string} but returns [Ok values] or [Error msg] instead of
-    raising exceptions. *)
 val of_string_result : string -> (value list, string) result
+(** Like {!of_string} but returns [Ok values] or [Error msg] instead of raising
+    exceptions. *)
 
 (**/**)
 
@@ -189,50 +184,46 @@ type event_kind =
   | Stream_start
   | Stream_end
   | Document_start of {
-      explicit       : bool;
-      version        : (int * int) option;
+      explicit : bool;
+      version : (int * int) option;
       tag_directives : (string * string) list;
     }
   | Document_end of { explicit : bool }
   | Mapping_start of {
-      anchor   : string option;
-      tag      : string option;
+      anchor : string option;
+      tag : string option;
       implicit : bool;
-      flow     : bool;
+      flow : bool;
     }
   | Mapping_end
   | Sequence_start of {
-      anchor   : string option;
-      tag      : string option;
+      anchor : string option;
+      tag : string option;
       implicit : bool;
-      flow     : bool;
+      flow : bool;
     }
   | Sequence_end
   | Scalar of {
       anchor : string option;
-      tag    : string option;
-      value  : string;
-      style  : scalar_style;
+      tag : string option;
+      value : string;
+      style : scalar_style;
     }
   | Alias of string
 
-type event = {
-  kind      : event_kind;
-  start_pos : pos;
-  end_pos   : pos;
-}
+type event = { kind : event_kind; start_pos : pos; end_pos : pos }
 
-(** Parse [input] and return the raw event list.
-    Used internally by the test suite to compare against yaml-test-suite
-    expected output.  Not part of the stable public API. *)
 val parse_events : string -> event list
+(** Parse [input] and return the raw event list. Used internally by the test
+    suite to compare against yaml-test-suite expected output. Not part of the
+    stable public API. *)
 
-(** Render an event list as a yaml-test-suite tree string.
-    Each event becomes one line; the result ends with a newline. *)
 val events_to_tree : event list -> string
+(** Render an event list as a yaml-test-suite tree string. Each event becomes
+    one line; the result ends with a newline. *)
 
-(** Compare two tree strings and return a human-readable description of
-    the first difference, or [None] if they are equal. *)
 val diff_event_trees : expected:string -> actual:string -> string option
+(** Compare two tree strings and return a human-readable description of the
+    first difference, or [None] if they are equal. *)
 
 (**/**)

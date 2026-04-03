@@ -1,7 +1,7 @@
-(** YAML pretty-printer.
-    Converts a list of parsed nodes back into a YAML string, preserving
-    scalar styles and collection flow/block style. *)
+(** YAML pretty-printer. Converts a list of parsed nodes back into a YAML
+    string, preserving scalar styles and collection flow/block style. *)
 
+val to_yaml : Types.node list -> string
 (** Serialise [docs] (one {!Types.node} per document) as a YAML string.
 
     Scalar styles are preserved:
@@ -16,14 +16,13 @@
 
     [Alias_node] values are emitted as [*name] references; the caller must
     ensure the corresponding anchored node appears earlier in the stream. *)
-val to_yaml : Types.node list -> string
 
-(** Raised by {!to_plain_yaml} when the input uses a feature that plain
-    YAML does not allow. *)
 exception Plain_error of string
+(** Raised by {!to_plain_yaml} when the input uses a feature that plain YAML
+    does not allow. *)
 
-(** Like {!to_yaml} but restricted to plain YAML: aliases are expanded,
-    anchor declarations are stripped, tags are stripped (or raise
-    {!Plain_error} when [~strict:true]), complex mapping keys always raise
-    {!Plain_error}, and all flow collections are converted to block style. *)
 val to_plain_yaml : ?strict:bool -> Types.node list -> string
+(** Like {!to_yaml} but restricted to plain YAML: aliases are expanded, anchor
+    declarations are stripped, tags are stripped (or raise {!Plain_error} when
+    [~strict:true]), complex mapping keys always raise {!Plain_error}, and all
+    flow collections are converted to block style. *)

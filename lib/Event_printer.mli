@@ -15,18 +15,18 @@
     Special characters in scalar values are escaped:
     actual newline → [\n], actual tab → [\t], actual backslash → [\\]. *)
 
-(** Render a single event as a tree-format line. *)
 val event_to_line : Types.event -> string
+(** Render a single event as a tree-format line. *)
 
-(** Convert an event list to the multi-line tree string.
-    Each event becomes one line; the result ends with a newline. *)
 val to_tree : Types.event list -> string
+(** Convert an event list to the multi-line tree string. Each event becomes one
+    line; the result ends with a newline. *)
 
-(** Split a tree string into trimmed, non-empty lines for comparison.
-    Strips the leading whitespace used for visual indentation in the
-    test suite's reference files. *)
 val normalise_tree : string -> string list
+(** Split a tree string into trimmed, non-empty lines for comparison. Strips the
+    leading whitespace used for visual indentation in the test suite's reference
+    files. *)
 
-(** Return a human-readable diff between [expected] and [actual] tree
-    strings, or [None] if they are equal. *)
 val diff_trees : expected:string -> actual:string -> string option
+(** Return a human-readable diff between [expected] and [actual] tree strings,
+    or [None] if they are equal. *)

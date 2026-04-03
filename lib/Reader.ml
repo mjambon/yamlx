@@ -1,26 +1,21 @@
-(** UTF-8 input reader for the YAML scanner.
-    Decodes the input string into an array of Unicode codepoints (int values),
-    skips an optional byte-order mark (BOM, U+FEFF) at the start, and
-    normalises all line endings to LF (U+000A):
-      * CR+LF  (\r\n)   → LF
-      * CR     (\r)     → LF
-      * NEL    (\x85)   → LF
-      * LS     (\u2028) → LF
-      * PS     (\u2029) → LF
-    Tracks the current position (codepoint index, line, column) and exposes a
-    small lookahead interface used by the Scanner. *)
+(** UTF-8 input reader for the YAML scanner. Decodes the input string into an
+    array of Unicode codepoints (int values), skips an optional byte-order mark
+    (BOM, U+FEFF) at the start, and normalises all line endings to LF (U+000A):
+    * CR+LF (\r\n) → LF * CR (\r) → LF * NEL (\x85) → LF * LS (\u2028) → LF * PS
+    (\u2029) → LF Tracks the current position (codepoint index, line, column)
+    and exposes a small lookahead interface used by the Scanner. *)
 
 open Types
 
-(** End-of-input sentinel.  Returned by [peek] when past the end. *)
+(** End-of-input sentinel. Returned by [peek] when past the end. *)
 let eof = Char_class.eof
 
 (* ------------------------------------------------------------------ *)
 (* UTF-8 decoding                                                       *)
 (* ------------------------------------------------------------------ *)
 
-(** Decode a UTF-8 string to an array of Unicode codepoints.
-    Raises [Failure] if the input contains invalid UTF-8 byte sequences. *)
+(** Decode a UTF-8 string to an array of Unicode codepoints. Raises [Failure] if
+    the input contains invalid UTF-8 byte sequences. *)
 let decode_utf8 (s : string) : int array =
   let n = String.length s in
   (* Upper bound: one codepoint per byte in the ASCII case *)
@@ -32,28 +27,37 @@ let decode_utf8 (s : string) : int array =
     let cp, width =
       if b0 land 0x80 = 0 then
         (* 0xxxxxxx – 1-byte (ASCII) *)
-        b0, 1
+        (b0, 1)
       else if b0 land 0xE0 = 0xC0 then begin
         (* 110xxxxx 10xxxxxx – 2-byte *)
         if !i + 1 >= n then failwith "Reader.decode_utf8: truncated sequence";
         let b1 = Char.code (String.unsafe_get s (!i + 1)) in
-        ((b0 land 0x1F) lsl 6) lor (b1 land 0x3F), 2
-      end else if b0 land 0xF0 = 0xE0 then begin
+        (((b0 land 0x1F) lsl 6) lor (b1 land 0x3F), 2)
+      end
+      else if b0 land 0xF0 = 0xE0 then begin
         (* 1110xxxx 10xxxxxx 10xxxxxx – 3-byte *)
         if !i + 2 >= n then failwith "Reader.decode_utf8: truncated sequence";
         let b1 = Char.code (String.unsafe_get s (!i + 1)) in
         let b2 = Char.code (String.unsafe_get s (!i + 2)) in
-        ((b0 land 0x0F) lsl 12) lor ((b1 land 0x3F) lsl 6) lor (b2 land 0x3F), 3
-      end else if b0 land 0xF8 = 0xF0 then begin
+        ( ((b0 land 0x0F) lsl 12) lor ((b1 land 0x3F) lsl 6) lor (b2 land 0x3F),
+          3 )
+      end
+      else if b0 land 0xF8 = 0xF0 then begin
         (* 11110xxx 10xxxxxx 10xxxxxx 10xxxxxx – 4-byte *)
         if !i + 3 >= n then failwith "Reader.decode_utf8: truncated sequence";
         let b1 = Char.code (String.unsafe_get s (!i + 1)) in
         let b2 = Char.code (String.unsafe_get s (!i + 2)) in
         let b3 = Char.code (String.unsafe_get s (!i + 3)) in
-        ((b0 land 0x07) lsl 18) lor ((b1 land 0x3F) lsl 12)
-        lor ((b2 land 0x3F) lsl 6) lor (b3 land 0x3F), 4
-      end else
-        failwith (Printf.sprintf "Reader.decode_utf8: invalid byte 0x%02X at offset %d" b0 !i)
+        ( ((b0 land 0x07) lsl 18)
+          lor ((b1 land 0x3F) lsl 12)
+          lor ((b2 land 0x3F) lsl 6)
+          lor (b3 land 0x3F),
+          4 )
+      end
+      else
+        failwith
+          (Printf.sprintf "Reader.decode_utf8: invalid byte 0x%02X at offset %d"
+             b0 !i)
     in
     Array.unsafe_set buf !j cp;
     incr j;
@@ -63,16 +67,17 @@ let decode_utf8 (s : string) : int array =
 
 (** Encode a Unicode codepoint as UTF-8 bytes appended to [buf]. *)
 let encode_utf8 (buf : Buffer.t) (cp : int) : unit =
-  if cp <= 0x7F then
-    Buffer.add_char buf (Char.chr cp)
+  if cp <= 0x7F then Buffer.add_char buf (Char.chr cp)
   else if cp <= 0x7FF then begin
     Buffer.add_char buf (Char.chr (0xC0 lor (cp lsr 6)));
     Buffer.add_char buf (Char.chr (0x80 lor (cp land 0x3F)))
-  end else if cp <= 0xFFFF then begin
+  end
+  else if cp <= 0xFFFF then begin
     Buffer.add_char buf (Char.chr (0xE0 lor (cp lsr 12)));
     Buffer.add_char buf (Char.chr (0x80 lor ((cp lsr 6) land 0x3F)));
     Buffer.add_char buf (Char.chr (0x80 lor (cp land 0x3F)))
-  end else begin
+  end
+  else begin
     Buffer.add_char buf (Char.chr (0xF0 lor (cp lsr 18)));
     Buffer.add_char buf (Char.chr (0x80 lor ((cp lsr 12) land 0x3F)));
     Buffer.add_char buf (Char.chr (0x80 lor ((cp lsr 6) land 0x3F)));
@@ -83,8 +88,8 @@ let encode_utf8 (buf : Buffer.t) (cp : int) : unit =
 (* Line-ending normalisation                                            *)
 (* ------------------------------------------------------------------ *)
 
-(** Normalise line endings and strip an optional leading BOM.
-    Returns a fresh array containing the normalised codepoints. *)
+(** Normalise line endings and strip an optional leading BOM. Returns a fresh
+    array containing the normalised codepoints. *)
 let normalise (raw : int array) : int array =
   let n = Array.length raw in
   let out = Array.make (n + 1) 0 in
@@ -97,13 +102,11 @@ let normalise (raw : int array) : int array =
     let norm =
       if cp = 0x0D then begin
         (* CR: normalise to LF, consume a following LF if present *)
-        if !i + 1 < n && Array.unsafe_get raw (!i + 1) = 0x0A then
-          incr i;
+        if !i + 1 < n && Array.unsafe_get raw (!i + 1) = 0x0A then incr i;
         0x0A
-      end else if cp = 0x85 || cp = 0x2028 || cp = 0x2029 then
-        0x0A
-      else
-        cp
+      end
+      else if cp = 0x85 || cp = 0x2028 || cp = 0x2029 then 0x0A
+      else cp
     in
     Array.unsafe_set out !j norm;
     incr j;
@@ -116,10 +119,10 @@ let normalise (raw : int array) : int array =
 (* ------------------------------------------------------------------ *)
 
 type t = {
-  buf    : int array;   (** normalised Unicode codepoints *)
-  mutable idx    : int; (** current position in [buf] *)
-  mutable line   : int; (** 1-based line number *)
-  mutable column : int; (** 0-based column (codepoints since last LF) *)
+  buf : int array;  (** normalised Unicode codepoints *)
+  mutable idx : int;  (** current position in [buf] *)
+  mutable line : int;  (** 1-based line number *)
+  mutable column : int;  (** 0-based column (codepoints since last LF) *)
 }
 
 (** Create a Reader from a UTF-8 string. *)
@@ -135,15 +138,13 @@ let length (r : t) : int = Array.length r.buf
 let at_end (r : t) : bool = r.idx >= Array.length r.buf
 
 (** The current position as a [Types.pos]. *)
-let pos (r : t) : pos =
-  { line = r.line; column = r.column; offset = r.idx }
+let pos (r : t) : pos = { line = r.line; column = r.column; offset = r.idx }
 
-(** Look ahead without consuming.  [peek r 0] is the current character.
-    Returns [eof] past the end of input. *)
+(** Look ahead without consuming. [peek r 0] is the current character. Returns
+    [eof] past the end of input. *)
 let peek (r : t) (ahead : int) : int =
   let i = r.idx + ahead in
-  if i >= Array.length r.buf then eof
-  else Array.unsafe_get r.buf i
+  if i >= Array.length r.buf then eof else Array.unsafe_get r.buf i
 
 (** Advance by [n] codepoints, updating line and column. *)
 let advance (r : t) (n : int) : unit =
@@ -152,15 +153,16 @@ let advance (r : t) (n : int) : unit =
     if r.idx < limit then begin
       let cp = Array.unsafe_get r.buf r.idx in
       r.idx <- r.idx + 1;
-      if cp = 0x0A then begin   (* LF resets the column *)
-        r.line   <- r.line + 1;
+      if cp = 0x0A then begin
+        (* LF resets the column *)
+        r.line <- r.line + 1;
         r.column <- 0
-      end else
-        r.column <- r.column + 1
+      end
+      else r.column <- r.column + 1
     end
   done
 
-(** Consume and return the current codepoint.  Returns [eof] at end. *)
+(** Consume and return the current codepoint. Returns [eof] at end. *)
 let read (r : t) : int =
   let cp = peek r 0 in
   if cp <> eof then advance r 1;
