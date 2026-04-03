@@ -212,7 +212,7 @@ let process_directives p =
             (* TAG directive: name = handle, value = prefix *)
             p.directives.tags <-
               (handle, value)
-              :: List.filter (fun (h, _) -> h <> handle) p.directives.tags
+              :: List_ext.filter (fun (h, _) -> h <> handle) p.directives.tags
         | _ -> ())
     | _ -> collecting := false
   done;

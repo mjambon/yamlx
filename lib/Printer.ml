@@ -86,7 +86,8 @@ let count_trailing_newlines s =
 (** Return a string of head-comment lines, each indented to [level] and
     terminated by ['\n']. Returns [""] when [comments] is empty. *)
 let emit_heads ~level comments =
-  String.concat "" (List.map (fun h -> indent level ^ "# " ^ h ^ "\n") comments)
+  String.concat ""
+    (List_ext.map (fun h -> indent level ^ "# " ^ h ^ "\n") comments)
 
 (** Return the inline suffix for a line comment, e.g. ["  # text"]. Returns [""]
     when [lc] is [None]. *)
@@ -159,12 +160,12 @@ let rec flow node =
       pre ^ body
   | Sequence_node { anchor; tag; items; _ } ->
       pp_anchor anchor ^ pp_tag tag ^ "["
-      ^ String.concat ", " (List.map flow items)
+      ^ String.concat ", " (List_ext.map flow items)
       ^ "]"
   | Mapping_node { anchor; tag; pairs; _ } ->
       pp_anchor anchor ^ pp_tag tag ^ "{"
       ^ String.concat ", "
-          (List.map (fun (k, v) -> flow k ^ ": " ^ flow v) pairs)
+          (List_ext.map (fun (k, v) -> flow k ^ ": " ^ flow v) pairs)
       ^ "}"
   | Alias_node { name; _ } -> "*" ^ name
 
@@ -220,7 +221,7 @@ let rec block_value ~level node =
       if is_flow || items = [] then
         ( false,
           pre ^ "["
-          ^ String.concat ", " (List.map flow items)
+          ^ String.concat ", " (List_ext.map flow items)
           ^ "]" ^ emit_lc line_comment ^ "\n" )
       else begin
         let b = Buffer.create 64 in
@@ -239,7 +240,7 @@ let rec block_value ~level node =
         ( false,
           pre ^ "{"
           ^ String.concat ", "
-              (List.map (fun (k, v) -> flow k ^ ": " ^ flow v) pairs)
+              (List_ext.map (fun (k, v) -> flow k ^ ": " ^ flow v) pairs)
           ^ "}" ^ emit_lc line_comment ^ "\n" )
       else begin
         let b = Buffer.create 64 in
@@ -340,7 +341,7 @@ let rec normalize_plain ~strict ~limit ~counter node =
           anchor = None;
           tag = None;
           flow = false;
-          items = List.map (normalize_plain ~strict ~limit ~counter) r.items;
+          items = List_ext.map (normalize_plain ~strict ~limit ~counter) r.items;
         }
   | Mapping_node { tag = Some t; _ } when strict ->
       raise
@@ -348,7 +349,7 @@ let rec normalize_plain ~strict ~limit ~counter node =
            (Printf.sprintf "tags are not allowed in plain YAML (tag: %s)" t))
   | Mapping_node r ->
       let pairs =
-        List.map
+        List_ext.map
           (fun (k, v) ->
             let k' = normalize_plain ~strict ~limit ~counter k in
             (match k' with
@@ -406,4 +407,6 @@ let to_plain_yaml ?(strict = false)
     string =
   let counter = ref 0 in
   to_yaml
-    (List.map (normalize_plain ~strict ~limit:expansion_limit ~counter) docs)
+    (List_ext.map
+       (normalize_plain ~strict ~limit:expansion_limit ~counter)
+       docs)

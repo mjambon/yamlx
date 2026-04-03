@@ -108,7 +108,7 @@ let event_to_line (ev : event) : string =
     line; lines are separated by newlines. The result ends with a final newline.
 *)
 let to_tree (events : event list) : string =
-  let lines = List.map event_to_line events in
+  let lines = List_ext.map event_to_line events in
   String.concat "\n" lines ^ "\n"
 
 (* ------------------------------------------------------------------ *)
@@ -120,8 +120,8 @@ let to_tree (events : event list) : string =
     it carries no semantic meaning. *)
 let normalize_tree (s : string) : string list =
   String.split_on_char '\n' s
-  |> List.map String.trim
-  |> List.filter (fun l -> l <> "")
+  |> List_ext.map String.trim
+  |> List_ext.filter (fun l -> l <> "")
 
 (** Return a human-readable diff between [expected] and [actual] tree strings.
     Only lists the first differing line. *)

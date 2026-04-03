@@ -49,7 +49,7 @@ let take_while pred (cur : cursor) =
     before [line]. *)
 let take_head_before line cur =
   take_while (fun (l, is_line, _) -> (not is_line) && l < line) cur
-  |> List.map (fun (_, _, t) -> t)
+  |> List_ext.map (fun (_, _, t) -> t)
 
 (** Consume and return the text of a line-comment entry exactly at [line], if
     present. *)

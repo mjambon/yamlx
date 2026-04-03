@@ -158,10 +158,10 @@ let rec resolve_node ~limit ~counter (node : Types.node) : Types.value =
   | Scalar_node { tag; value; style; _ } ->
       resolve_scalar ~explicit_tag:tag ~style ~value
   | Sequence_node { items; _ } ->
-      Seq (List.map (resolve_node ~limit ~counter) items)
+      Seq (List_ext.map (resolve_node ~limit ~counter) items)
   | Mapping_node { pairs; _ } ->
       Map
-        (List.map
+        (List_ext.map
            (fun (k, v) ->
              (resolve_node ~limit ~counter k, resolve_node ~limit ~counter v))
            pairs)
@@ -170,4 +170,4 @@ let rec resolve_node ~limit ~counter (node : Types.node) : Types.value =
 let resolve_documents ?(expansion_limit = Types.default_expansion_limit)
     (nodes : Types.node list) : Types.value list =
   let counter = ref 0 in
-  List.map (resolve_node ~limit:expansion_limit ~counter) nodes
+  List_ext.map (resolve_node ~limit:expansion_limit ~counter) nodes
