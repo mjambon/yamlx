@@ -1,6 +1,6 @@
 (test
   (name Test_yamlx)
-  (libraries yamlx testo)
+  (libraries yamlx testo unix)
   (preprocess
     (pps
       ppx_deriving.eq

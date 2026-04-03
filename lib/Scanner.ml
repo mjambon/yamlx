@@ -34,8 +34,8 @@ open Types
 
 type state = {
   reader : Reader.t;
-  (* Token buffer *)
-  mutable tokens : token list;
+  (* Token buffer — a FIFO queue for O(1) push (back) and pop (front). *)
+  tokens : token Queue.t;
   mutable tokens_taken : int;  (** total tokens returned so far *)
   (* Indentation tracking for block context *)
   mutable indent : int;  (** current block indent, -1 at stream start *)
@@ -49,6 +49,12 @@ type state = {
   possible_simple_keys : (int, simple_key) Hashtbl.t;
       (** Possible simple key for each flow level. Key = flow_level; value =
           info about the pending candidate. *)
+  mutable min_simple_key_token : int;
+      (** Minimum [sk_token_number] across all entries in
+          [possible_simple_keys], or [max_int] when the table is empty.
+          Maintained incrementally so that {!earliest_possible_simple_key} and
+          the early-exit guard in {!stale_possible_simple_keys} are both O(1)
+          instead of O(n). *)
   (* Stream lifecycle *)
   mutable done_ : bool;
   mutable stream_start_produced : bool;
@@ -76,34 +82,49 @@ and simple_key = {
 let make_token (tok_kind : token_kind) tok_start_pos tok_end_pos : token =
   { tok_kind; tok_start_pos; tok_end_pos }
 
-(** Append a token to the back of the scanner's token queue. *)
-let push_token scn tok = scn.tokens <- scn.tokens @ [ tok ]
+(** Append a token to the back of the scanner's token queue. O(1). *)
+let push_token scn tok = Queue.add tok scn.tokens
 
-(** Insert a token at position [pos] (0 = front). *)
+(** Insert a token at position [pos] (0 = front). Converts the queue to a list,
+    inserts, then rebuilds. O(n) but called only for BLOCK_*_START insertion and
+    retroactive KEY insertion, which are rare. *)
 let insert_token scn pos tok =
+  let lst = Queue.fold (fun acc t -> t :: acc) [] scn.tokens |> List.rev in
   let rec go i = function
     | tl when i = pos -> tok :: tl
     | t :: rest -> t :: go (i + 1) rest
     | [] -> [ tok ]
   in
-  scn.tokens <- go 0 scn.tokens
+  let new_lst = go 0 lst in
+  Queue.clear scn.tokens;
+  List.iter (fun t -> Queue.add t scn.tokens) new_lst
 
 (** Insert a BLOCK_*_START token after any leading ANCHOR/TAG tokens that are
     already queued. ANCHOR and TAG are node properties that must precede the
     collection-start event, so when the block indicator (- or ?) is encountered
     the START token must be placed *after* those. *)
 let insert_collection_start scn tok =
-  let rec count_props = function
-    | { tok_kind = Anchor _; _ } :: rest
-    | { tok_kind = Tag _; _ } :: rest ->
-        1 + count_props rest
-    | _ -> 0
+  (* Count leading ANCHOR/TAG tokens from the queue front using a temporary seq *)
+  let pos =
+    let n = ref 0 in
+    (try
+       Queue.iter
+         (fun t ->
+           match t.tok_kind with
+           | Anchor _
+           | Tag _ ->
+               incr n
+           | _ -> raise Exit)
+         scn.tokens
+     with
+    | Exit -> ());
+    !n
   in
-  let pos = count_props scn.tokens in
   insert_token scn pos tok
 
-(** Return the number of buffered tokens that haven't been returned yet. *)
-let pending_count scn = List.length scn.tokens
+(** Return the number of buffered tokens that haven't been returned yet. O(1).
+*)
+let pending_count scn = Queue.length scn.tokens
 
 (** The absolute token number that the *next* pushed token will receive. *)
 let next_token_number scn = scn.tokens_taken + pending_count scn
@@ -129,6 +150,21 @@ let scan_line_break scn =
   else ""
 
 (* ------------------------------------------------------------------ *)
+(* Simple key min-tracker helper (defined early; used by indentation    *)
+(* management and the full simple key section below)                    *)
+(* ------------------------------------------------------------------ *)
+
+(** Recompute [min_simple_key_token] from scratch by scanning the whole table.
+    Called after any operation that may have removed the current minimum. O(n)
+    where n = number of entries, but only invoked when an entry is actually
+    deleted. *)
+let recompute_min_simple_key_token scn =
+  scn.min_simple_key_token <-
+    Hashtbl.fold
+      (fun _level sk acc -> min sk.sk_token_number acc)
+      scn.possible_simple_keys max_int
+
+(* ------------------------------------------------------------------ *)
 (* Indentation management                                               *)
 (* ------------------------------------------------------------------ *)
 
@@ -150,11 +186,13 @@ let unwind_indent scn col =
     done;
     (* When blocks were closed, discard simple-key candidates that belong to
        the now-closed indentation levels (they can never be confirmed). *)
-    if !closed then
+    if !closed then begin
       Hashtbl.filter_map_inplace
         (fun _level sk ->
           if sk.sk_pos.column > scn.indent then None else Some sk)
-        scn.possible_simple_keys
+        scn.possible_simple_keys;
+      recompute_min_simple_key_token scn
+    end
   end
 
 (** Try to start a new indentation level at [col]. Returns [true] and updates
@@ -176,24 +214,42 @@ let add_indent scn col =
     returned to the parser, or it spans a line boundary in a context that
     forbids multi-line keys). *)
 let stale_possible_simple_keys scn =
-  Hashtbl.filter_map_inplace
-    (fun level sk ->
-      if sk.sk_token_number < scn.tokens_taken then begin
-        (* The token was already returned; the key window has closed. *)
-        if sk.sk_required then
-          Types.scan_error sk.sk_pos "could not find expected ':'";
-        None
-      end
-      else if level = 0 && (pos scn).line > sk.sk_pos.line then begin
-        (* In block context, an implicit key candidate must be on a single line.
-         If we have moved to a later line without seeing ':', the candidate
-         is stale.  Required keys in this situation are a hard error. *)
-        if sk.sk_required then
-          Types.scan_error sk.sk_pos "could not find expected ':'";
-        None
-      end
-      else Some sk)
-    scn.possible_simple_keys
+  (* Fast path: if no key's token number is less than tokens_taken, and no
+     block-context line boundary can have been crossed (level-0 key's line is
+     still the current line), nothing is stale — skip the O(n) scan entirely. *)
+  if
+    scn.tokens_taken <= scn.min_simple_key_token
+    && not
+         (match Hashtbl.find_opt scn.possible_simple_keys 0 with
+         | Some sk -> (pos scn).line > sk.sk_pos.line
+         | None -> false)
+  then ()
+  else begin
+    let removed_min = ref false in
+    Hashtbl.filter_map_inplace
+      (fun level sk ->
+        if sk.sk_token_number < scn.tokens_taken then begin
+          (* The token was already returned; the key window has closed. *)
+          if sk.sk_required then
+            Types.scan_error sk.sk_pos "could not find expected ':'";
+          if sk.sk_token_number = scn.min_simple_key_token then
+            removed_min := true;
+          None
+        end
+        else if level = 0 && (pos scn).line > sk.sk_pos.line then begin
+          (* In block context, an implicit key candidate must be on a single line.
+           If we have moved to a later line without seeing ':', the candidate
+           is stale.  Required keys in this situation are a hard error. *)
+          if sk.sk_required then
+            Types.scan_error sk.sk_pos "could not find expected ':'";
+          if sk.sk_token_number = scn.min_simple_key_token then
+            removed_min := true;
+          None
+        end
+        else Some sk)
+      scn.possible_simple_keys;
+    if !removed_min then recompute_min_simple_key_token scn
+  end
 
 (** Save the current position as a potential simple key for the current flow
     level. *)
@@ -201,12 +257,11 @@ let save_possible_simple_key scn =
   if scn.allow_simple_key then begin
     (* A required key: at indent == column and in block context *)
     let required = scn.flow_level = 0 && scn.indent = column scn in
+    let token_num = next_token_number scn in
     Hashtbl.replace scn.possible_simple_keys scn.flow_level
-      {
-        sk_token_number = next_token_number scn;
-        sk_required = required;
-        sk_pos = pos scn;
-      }
+      { sk_token_number = token_num; sk_required = required; sk_pos = pos scn };
+    if token_num < scn.min_simple_key_token then
+      scn.min_simple_key_token <- token_num
   end
 
 (** Remove the simple key candidate for the current flow level (called when we
@@ -215,14 +270,11 @@ let remove_possible_simple_key scn =
   match Hashtbl.find_opt scn.possible_simple_keys scn.flow_level with
   | Some sk when sk.sk_required ->
       Types.scan_error sk.sk_pos "could not find expected ':'"
-  | _ -> Hashtbl.remove scn.possible_simple_keys scn.flow_level
-
-(** Return the minimum (earliest) token number among all pending simple keys, or
-    [max_int] if there are none. *)
-let earliest_possible_simple_key scn =
-  Hashtbl.fold
-    (fun _level sk acc -> min sk.sk_token_number acc)
-    scn.possible_simple_keys max_int
+  | Some sk ->
+      Hashtbl.remove scn.possible_simple_keys scn.flow_level;
+      if sk.sk_token_number = scn.min_simple_key_token then
+        recompute_min_simple_key_token scn
+  | None -> ()
 
 (** True if we need more tokens before we can safely return the next one. This
     is the case when a pending simple key's token is the very next token to be
@@ -230,8 +282,8 @@ let earliest_possible_simple_key scn =
 *)
 let need_more_tokens scn =
   if scn.done_ then false
-  else if scn.tokens = [] then true
-  else earliest_possible_simple_key scn = scn.tokens_taken
+  else if Queue.is_empty scn.tokens then true
+  else scn.min_simple_key_token = scn.tokens_taken
 
 (* ------------------------------------------------------------------ *)
 (* Whitespace / comment skipping                                        *)
@@ -466,6 +518,7 @@ let fetch_document_start scn =
       "'---' document-start marker is not allowed inside a flow collection";
   unwind_indent scn (-1);
   Hashtbl.clear scn.possible_simple_keys;
+  scn.min_simple_key_token <- max_int;
   scn.allow_simple_key <- false;
   advance scn 3;
   (* consume '---' *)
@@ -478,6 +531,7 @@ let fetch_document_end scn =
       "'...' document-end marker is not allowed inside a flow collection";
   unwind_indent scn (-1);
   Hashtbl.clear scn.possible_simple_keys;
+  scn.min_simple_key_token <- max_int;
   scn.allow_simple_key <- false;
   advance scn 3;
   (* consume '...' *)
@@ -627,6 +681,8 @@ let fetch_value scn =
       if (not in_flow_mapping) && (pos scn).line > sk.sk_pos.line then
         Types.scan_error sk.sk_pos "implicit key cannot span multiple lines";
       Hashtbl.remove scn.possible_simple_keys scn.flow_level;
+      if sk.sk_token_number = scn.min_simple_key_token then
+        recompute_min_simple_key_token scn;
       let insert_pos = sk.sk_token_number - scn.tokens_taken in
       insert_token scn insert_pos (make_token Key sk.sk_pos sk.sk_pos);
       if scn.flow_level = 0 then begin
@@ -1556,6 +1612,7 @@ let fetch_stream_end scn =
   unwind_indent scn (-1);
   scn.allow_simple_key <- false;
   Hashtbl.clear scn.possible_simple_keys;
+  scn.min_simple_key_token <- max_int;
   push_token scn (make_token Stream_end (pos scn) (pos scn));
   scn.done_ <- true
 
@@ -1697,7 +1754,7 @@ and can_start_plain scn cp =
 let create (reader : Reader.t) : state =
   {
     reader;
-    tokens = [];
+    tokens = Queue.create ();
     tokens_taken = 0;
     indent = -1;
     indents = [];
@@ -1705,6 +1762,7 @@ let create (reader : Reader.t) : state =
     flow_is_sequence = [];
     allow_simple_key = true;
     possible_simple_keys = Hashtbl.create 4;
+    min_simple_key_token = max_int;
     done_ = false;
     stream_start_produced = false;
     comments = Queue.create ();
@@ -1725,30 +1783,28 @@ let ensure_token (scn : state) : unit =
 (** Return (without consuming) the next token in the stream. *)
 let peek_token (scn : state) : token =
   ensure_token scn;
-  match scn.tokens with
-  | t :: _ -> t
-  | [] -> failwith "Scanner.peek_token: internal error: no token available"
+  if Queue.is_empty scn.tokens then
+    failwith "Scanner.peek_token: internal error: no token available"
+  else Queue.peek scn.tokens
 
 (** Consume and return the next token. *)
 let get_token (scn : state) : token =
   ensure_token scn;
-  match scn.tokens with
-  | t :: rest ->
-      scn.tokens <- rest;
-      scn.tokens_taken <- scn.tokens_taken + 1;
-      t
-  | [] -> failwith "Scanner.get_token: internal error: no token available"
+  if Queue.is_empty scn.tokens then
+    failwith "Scanner.get_token: internal error: no token available"
+  else begin
+    scn.tokens_taken <- scn.tokens_taken + 1;
+    Queue.pop scn.tokens
+  end
 
 (** True if the next token's kind is in [kinds]. *)
 let check_token (scn : state) (kinds : token_kind list) : bool =
   ensure_token scn;
-  match scn.tokens with
-  | t :: _ -> List.mem t.tok_kind kinds
-  | [] -> false
+  if Queue.is_empty scn.tokens then false
+  else List.mem (Queue.peek scn.tokens).tok_kind kinds
 
 (** Peek at the kind of the next token without consuming it. *)
 let peek_kind (scn : state) : token_kind option =
   ensure_token scn;
-  match scn.tokens with
-  | t :: _ -> Some t.tok_kind
-  | [] -> None
+  if Queue.is_empty scn.tokens then None
+  else Some (Queue.peek scn.tokens).tok_kind

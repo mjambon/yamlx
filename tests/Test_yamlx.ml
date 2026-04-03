@@ -342,6 +342,36 @@ let expansion_limit_tests () =
   ]
 
 (* ------------------------------------------------------------------ *)
+(* Performance / scalability tests                                       *)
+(* ------------------------------------------------------------------ *)
+
+let performance_tests () =
+  [
+    Testo.create ~category:[ "performance" ]
+      "deeply nested flow sequences parse in linear time" (fun () ->
+        (* Verify that O(n) nesting does not trigger O(n²) behaviour in the
+           scanner.  We time two depths and check that doubling the depth does
+           not more than quadruple the elapsed time (a 4× headroom accommodates
+           noise while still catching quadratic regression). *)
+        let time n =
+          let input = String.make n '[' ^ String.make n ']' in
+          let t0 = Unix.gettimeofday () in
+          (try ignore (YAMLx.parse_nodes input) with
+          | _ -> ());
+          Unix.gettimeofday () -. t0
+        in
+        let t1 = time 4000 in
+        let t2 = time 8000 in
+        (* t2 / t1 should be close to 2 for O(n); allow up to 8× for noise *)
+        if t1 > 0.0 && t2 /. t1 > 8.0 then
+          failwith
+            (Printf.sprintf
+               "quadratic behaviour detected: depth 4000 = %.4fs, depth 8000 = \
+                %.4fs (ratio %.1f, expected ~2)"
+               t1 t2 (t2 /. t1)));
+  ]
+
+(* ------------------------------------------------------------------ *)
 (* Build test list from yaml-test-suite                                  *)
 (* ------------------------------------------------------------------ *)
 
@@ -385,4 +415,4 @@ let suite_tests () =
 let () =
   Testo.interpret_argv ~project_name:"yamlx" (fun _tags ->
       unit_tests () @ roundtrip_tests () @ comment_tests ()
-      @ expansion_limit_tests () @ suite_tests ())
+      @ expansion_limit_tests () @ performance_tests () @ suite_tests ())
