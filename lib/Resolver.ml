@@ -117,27 +117,27 @@ let parse_int s =
   else Int64.of_string s
 
 (** Resolve a scalar node's tag and construct the corresponding [value]. *)
-let resolve_scalar ~(explicit_tag : string option) ~(style : scalar_style)
-    ~(value : string) : Types.value =
+let resolve_scalar ~(loc : Types.loc) ~(explicit_tag : string option)
+    ~(style : scalar_style) ~(value : string) : Types.value =
   let tag = effective_tag ~explicit_tag ~style ~value in
   let str_tag = yaml_prefix ^ "str" in
   let int_tag = yaml_prefix ^ "int" in
   let float_tag = yaml_prefix ^ "float" in
   let bool_tag = yaml_prefix ^ "bool" in
   let null_tag = yaml_prefix ^ "null" in
-  if tag = null_tag then Null
-  else if tag = bool_tag then Bool (is_true_str value)
+  if tag = null_tag then Null loc
+  else if tag = bool_tag then Bool (loc, is_true_str value)
   else if tag = int_tag then
-    try Int (parse_int value) with
-    | _ -> String value
+    try Int (loc, parse_int value) with
+    | _ -> String (loc, value)
   else if tag = float_tag then
     match try_float value with
-    | Some f -> Float f
-    | None -> String value
-  else if tag = str_tag then String value
+    | Some f -> Float (loc, f)
+    | None -> String (loc, value)
+  else if tag = str_tag then String (loc, value)
   else
     (* Unknown tag: pass through as string *)
-    String value
+    String (loc, value)
 
 (* ------------------------------------------------------------------ *)
 (* Full node resolution                                                  *)
@@ -149,22 +149,39 @@ let tick ~limit ~counter =
   incr counter;
   if !counter > limit then raise (Types.Expansion_limit_exceeded limit)
 
+(** Extract the [loc] from any node variant. *)
+let node_loc : Types.node -> Types.loc = function
+  | Scalar_node r -> r.loc
+  | Sequence_node r -> r.loc
+  | Mapping_node r -> r.loc
+  | Alias_node r -> r.loc
+
 (** Resolve an entire node tree into a [value] tree. [counter] tracks the total
     number of nodes visited across the whole traversal; [limit] is the upper
     bound. *)
 let rec resolve_node ~limit ~counter (node : Types.node) : Types.value =
   tick ~limit ~counter;
   match node with
-  | Scalar_node { tag; value; style; _ } ->
-      resolve_scalar ~explicit_tag:tag ~style ~value
-  | Sequence_node { items; _ } ->
-      Seq (List_ext.map (resolve_node ~limit ~counter) items)
-  | Mapping_node { pairs; _ } ->
+  | Scalar_node { tag; value; style; loc; _ } ->
+      resolve_scalar ~loc ~explicit_tag:tag ~style ~value
+  | Sequence_node { items; loc; _ } ->
+      Seq (loc, List_ext.map (resolve_node ~limit ~counter) items)
+  | Mapping_node { pairs; loc; _ } ->
       Map
-        (List_ext.map
-           (fun (k, v) ->
-             (resolve_node ~limit ~counter k, resolve_node ~limit ~counter v))
-           pairs)
+        ( loc,
+          List_ext.map
+            (fun (k, v) ->
+              let pair_loc =
+                Types.
+                  {
+                    start_pos = (node_loc k).start_pos;
+                    end_pos = (node_loc v).end_pos;
+                  }
+              in
+              ( pair_loc,
+                resolve_node ~limit ~counter k,
+                resolve_node ~limit ~counter v ))
+            pairs )
   | Alias_node { resolved; _ } -> resolve_node ~limit ~counter resolved
 
 let resolve_documents ?(expansion_limit = Types.default_expansion_limit)

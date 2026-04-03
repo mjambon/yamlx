@@ -140,14 +140,19 @@ type node =
     - Decimal or scientific floats; [.inf], [.nan] variants → {!Float}
     - Everything else, and all quoted or block scalars → {!String} *)
 type value =
-  | Null
-  | Bool of bool
-  | Int of int64
-  | Float of float
-  | String of string
-  | Seq of value list
-  | Map of (value * value) list
-[@@deriving eq, show]
+  | Null of loc
+  | Bool of loc * bool
+  | Int of loc * int64
+  | Float of loc * float
+  | String of loc * string
+  | Seq of loc * value list
+  | Map of loc * (loc * value * value) list
+[@@deriving show]
+
+val equal_value : value -> value -> bool
+(** Structural equality that ignores source locations. Two values are equal when
+    they represent the same YAML data regardless of where they appear in the
+    source. *)
 
 (** {1 Parsing} *)
 

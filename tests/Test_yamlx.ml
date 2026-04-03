@@ -138,27 +138,27 @@ let unit_tests () =
     Testo.create "resolver null" (fun () ->
         let vs = YAMLx.of_string "~" in
         match vs with
-        | [ YAMLx.Null ] -> ()
+        | [ YAMLx.Null _ ] -> ()
         | _ -> failwith "expected Null");
     Testo.create "resolver bool true" (fun () ->
         let vs = YAMLx.of_string "true" in
         match vs with
-        | [ YAMLx.Bool true ] -> ()
+        | [ YAMLx.Bool (_, true) ] -> ()
         | _ -> failwith "expected Bool true");
     Testo.create "resolver int" (fun () ->
         let vs = YAMLx.of_string "42" in
         match vs with
-        | [ YAMLx.Int 42L ] -> ()
+        | [ YAMLx.Int (_, 42L) ] -> ()
         | _ -> failwith "expected Int 42");
     Testo.create "resolver float" (fun () ->
         let vs = YAMLx.of_string "3.14" in
         match vs with
-        | [ YAMLx.Float f ] when Float.abs (f -. 3.14) < 1e-10 -> ()
+        | [ YAMLx.Float (_, f) ] when Float.abs (f -. 3.14) < 1e-10 -> ()
         | _ -> failwith "expected Float ~3.14");
     Testo.create "resolver string (quoted)" (fun () ->
         let vs = YAMLx.of_string {|"42"|} in
         match vs with
-        | [ YAMLx.String "42" ] -> ()
+        | [ YAMLx.String (_, "42") ] -> ()
         | _ -> failwith "expected String \"42\"");
   ]
 
@@ -361,7 +361,7 @@ let expansion_limit_tests () =
         let input = "x: &x foo\na: *x\nb: *x\nc: *x\n" in
         let values = YAMLx.of_string input in
         match values with
-        | [ YAMLx.Map pairs ] when List.length pairs = 4 -> ()
+        | [ YAMLx.Map (_, pairs) ] when List.length pairs = 4 -> ()
         | _ -> failwith "unexpected value");
     Testo.create ~category:[ "expansion-limit" ]
       "to_yaml does not expand aliases and ignores limit" (fun () ->

@@ -179,10 +179,10 @@ type node =
 (** Typed values produced by applying the YAML 1.2 JSON schema to a composed
     node tree. *)
 type value =
-  | Null
-  | Bool of bool
-  | Int of int64
-  | Float of float
-  | String of string
-  | Seq of value list
-  | Map of (value * value) list
+  | Null of loc
+  | Bool of loc * bool
+  | Int of loc * int64
+  | Float of loc * float
+  | String of loc * string
+  | Seq of loc * value list
+  | Map of loc * (loc * value * value) list
