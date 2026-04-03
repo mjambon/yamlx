@@ -281,7 +281,10 @@ let comment_tests () =
 
 (** The canonical YAML bomb: 9 levels of 9-element sequences, each level
     aliasing the previous one. Expanding all aliases would require visiting 9^9
-    ≈ 387 million nodes; the default limit of 1,000,000 stops it early. *)
+    ≈ 387 million nodes; the default limit of 1,000,000 stops it early.
+
+    See https://en.wikipedia.org/wiki/Billion_laughs_attack for a generic
+    description of the issue. *)
 let yaml_bomb =
   {|a: &a ["lol","lol","lol","lol","lol","lol","lol","lol","lol"]
 b: &b [*a,*a,*a,*a,*a,*a,*a,*a,*a]
