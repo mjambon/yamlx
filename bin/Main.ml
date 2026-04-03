@@ -32,15 +32,36 @@ let set_format s =
               "unknown format %S (choose: yaml, plain, events, value, node)"
               other))
 
+let usage_msg =
+  {|Usage: yamlx [-f FORMAT] [FILE]
+
+  Parse YAML 1.2 from FILE (or stdin) and write the result to stdout.
+  Reads from standard input when no FILE is given.
+  Multi-document streams, anchors, tags, and Unicode are fully supported.
+
+  Output formats (-f FORMAT):
+    yaml    Pretty-printed YAML — scalar styles and block/flow mode preserved
+            (default)
+    plain   Simplified YAML — aliases expanded, tags stripped, flow collections
+            converted to block; raises an error on complex mapping keys
+    value   Typed-value tree: Null / Bool / Int / Float / String / Seq / Map
+            Useful for checking how scalars are resolved (e.g. is "1e2" a Float?)
+    node    Full AST with source locations, anchors, tags, scalar styles, and
+            best-effort comment preservation
+    events  yaml-test-suite event-tree notation (mainly for parser testing)
+
+  Options:|}
+
 let spec =
   [
     ( "--format",
       Arg.String set_format,
-      "FORMAT  Output format: yaml (default), plain, events, value, or node" );
+      "FORMAT  Select output format (see above)" );
     ("-f", Arg.String set_format, "FORMAT  Short alias for --format");
     ( "--strict",
       Arg.Set strict,
-      "  With --format plain: error on tags instead of stripping them" );
+      "  With -f plain: raise an error on tags instead of silently stripping \
+       them" );
   ]
 
 (* ------------------------------------------------------------------ *)
@@ -71,9 +92,7 @@ let read_stdin () =
 
 let () =
   let files = ref [] in
-  Arg.parse spec
-    (fun s -> files := s :: !files)
-    "Usage: yamlx [--format FORMAT] [FILE]";
+  Arg.parse spec (fun s -> files := s :: !files) usage_msg;
   let input =
     match List.rev !files with
     | [] -> read_stdin ()
