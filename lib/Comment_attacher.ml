@@ -65,10 +65,10 @@ let take_line_comment line (cur : cursor) =
 (* ------------------------------------------------------------------ *)
 
 let node_line = function
-  | Scalar_node r -> r.pos.line
-  | Sequence_node r -> r.pos.line
-  | Mapping_node r -> r.pos.line
-  | Alias_node r -> r.pos.line
+  | Scalar_node r -> r.loc.start_pos.line
+  | Sequence_node r -> r.loc.start_pos.line
+  | Mapping_node r -> r.loc.start_pos.line
+  | Alias_node r -> r.loc.start_pos.line
 
 (** Return the [head_comments] field of a node. *)
 let get_heads = function

@@ -10,6 +10,7 @@
    compiler (same physical type) and the mli (no mention of Types). *)
 
 type pos = Types.pos = { line : int; column : int; offset : int }
+type loc = Types.loc = { start_pos : pos; end_pos : pos }
 type yaml_error = Types.yaml_error = { msg : string; pos : pos }
 
 exception Scan_error = Types.Scan_error
@@ -61,7 +62,7 @@ type node = Types.node =
       tag : string option;
       value : string;
       style : scalar_style;
-      pos : pos;
+      loc : loc;
       head_comments : string list;
       line_comment : string option;
     }
@@ -70,7 +71,7 @@ type node = Types.node =
       tag : string option;
       items : node list;
       flow : bool;
-      pos : pos;
+      loc : loc;
       head_comments : string list;
       line_comment : string option;
       foot_comments : string list;
@@ -80,7 +81,7 @@ type node = Types.node =
       tag : string option;
       pairs : (node * node) list;
       flow : bool;
-      pos : pos;
+      loc : loc;
       head_comments : string list;
       line_comment : string option;
       foot_comments : string list;
@@ -88,7 +89,7 @@ type node = Types.node =
   | Alias_node of {
       name : string;
       resolved : node;
-      pos : pos;
+      loc : loc;
       head_comments : string list;
       line_comment : string option;
     }

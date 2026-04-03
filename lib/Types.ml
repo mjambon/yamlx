@@ -21,6 +21,9 @@ type pos = {
 
 let pos_zero = { line = 1; column = 0; offset = 0 }
 
+type loc = { start_pos : pos; end_pos : pos }
+(** A source range from [start_pos] (inclusive) to [end_pos] (exclusive). *)
+
 (** {1 Errors} *)
 
 type yaml_error = { msg : string; pos : pos }
@@ -140,7 +143,7 @@ type node =
       tag : string option;
       value : string;
       style : scalar_style;
-      pos : pos;
+      loc : loc;
       head_comments : string list;
       line_comment : string option;
     }
@@ -149,7 +152,7 @@ type node =
       tag : string option;
       items : node list;
       flow : bool;
-      pos : pos;
+      loc : loc;
       head_comments : string list;
       line_comment : string option;
       foot_comments : string list;
@@ -159,7 +162,7 @@ type node =
       tag : string option;
       pairs : (node * node) list;
       flow : bool;
-      pos : pos;
+      loc : loc;
       head_comments : string list;
       line_comment : string option;
       foot_comments : string list;
@@ -167,7 +170,7 @@ type node =
   | Alias_node of {
       name : string;
       resolved : node;
-      pos : pos;
+      loc : loc;
       head_comments : string list;
       line_comment : string option;
     }

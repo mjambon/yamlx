@@ -42,7 +42,7 @@ let rec compose_node (c : t) : node =
             {
               name;
               resolved = target;
-              pos = ev.start_pos;
+              loc = { start_pos = ev.start_pos; end_pos = ev.end_pos };
               head_comments = [];
               line_comment = None;
             }
@@ -55,7 +55,7 @@ let rec compose_node (c : t) : node =
             tag;
             value;
             style;
-            pos = ev.start_pos;
+            loc = { start_pos = ev.start_pos; end_pos = ev.end_pos };
             head_comments = [];
             line_comment = None;
           }
@@ -63,14 +63,16 @@ let rec compose_node (c : t) : node =
       Option.iter (fun n -> register_anchor c n node) anchor;
       node
   | Sequence_start { anchor; tag; flow; _ } ->
-      let start = ev.start_pos in
+      let start_pos = ev.start_pos in
+      let end_pos = ref ev.end_pos in
       let items = ref [] in
       let stop = ref false in
       while not !stop do
         let next = Parser.peek_event c.parser_ in
         match next.kind with
         | Sequence_end ->
-            ignore (get_ev c);
+            let end_ev = get_ev c in
+            end_pos := end_ev.end_pos;
             stop := true
         | _ -> items := compose_node c :: !items
       done;
@@ -81,7 +83,7 @@ let rec compose_node (c : t) : node =
             tag;
             items = List.rev !items;
             flow;
-            pos = start;
+            loc = { start_pos; end_pos = !end_pos };
             head_comments = [];
             line_comment = None;
             foot_comments = [];
@@ -90,14 +92,16 @@ let rec compose_node (c : t) : node =
       Option.iter (fun n -> register_anchor c n node) anchor;
       node
   | Mapping_start { anchor; tag; flow; _ } ->
-      let start = ev.start_pos in
+      let start_pos = ev.start_pos in
+      let end_pos = ref ev.end_pos in
       let pairs = ref [] in
       let stop = ref false in
       while not !stop do
         let next = Parser.peek_event c.parser_ in
         match next.kind with
         | Mapping_end ->
-            ignore (get_ev c);
+            let end_ev = get_ev c in
+            end_pos := end_ev.end_pos;
             stop := true
         | _ ->
             let key = compose_node c in
@@ -111,7 +115,7 @@ let rec compose_node (c : t) : node =
             tag;
             pairs = List.rev !pairs;
             flow;
-            pos = start;
+            loc = { start_pos; end_pos = !end_pos };
             head_comments = [];
             line_comment = None;
             foot_comments = [];

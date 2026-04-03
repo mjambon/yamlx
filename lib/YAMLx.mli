@@ -29,6 +29,10 @@ type pos = {
     (Unicode codepoints from the start of the line, matching the YAML
     specification). *)
 
+type loc = { start_pos : pos; end_pos : pos }
+(** A source range. [start_pos] is the first character of the node; [end_pos] is
+    the position immediately after the last character. *)
+
 (** {1 Errors} *)
 
 type yaml_error = { msg : string; pos : pos }
@@ -85,7 +89,7 @@ type node =
       tag : string option;  (** resolved tag URI if present *)
       value : string;
       style : scalar_style;
-      pos : pos;
+      loc : loc;
       head_comments : string list;
       line_comment : string option;
     }
@@ -94,7 +98,7 @@ type node =
       tag : string option;
       items : node list;
       flow : bool;  (** true for [[a, b]] style, false for block *)
-      pos : pos;
+      loc : loc;
       head_comments : string list;
       line_comment : string option;
       foot_comments : string list;
@@ -104,7 +108,7 @@ type node =
       tag : string option;
       pairs : (node * node) list;
       flow : bool;  (** true for [{a: b}] style, false for block *)
-      pos : pos;
+      loc : loc;
       head_comments : string list;
       line_comment : string option;
       foot_comments : string list;
@@ -112,7 +116,7 @@ type node =
   | Alias_node of {
       name : string;  (** the anchor name, without the [*] *)
       resolved : node;
-      pos : pos;
+      loc : loc;
       head_comments : string list;
       line_comment : string option;
     }
