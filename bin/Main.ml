@@ -13,7 +13,7 @@
 (* Output format                                                         *)
 (* ------------------------------------------------------------------ *)
 
-type format = Events | Yaml | Plain
+type format = Events | Yaml | Plain | Value | Node
 
 let format = ref Yaml
 let strict = ref false
@@ -23,17 +23,20 @@ let set_format s =
   | "events" -> format := Events
   | "yaml" -> format := Yaml
   | "plain" -> format := Plain
+  | "value" -> format := Value
+  | "node" -> format := Node
   | other ->
       raise
         (Arg.Bad
-           (Printf.sprintf "unknown format %S (choose: yaml, plain, events)"
+           (Printf.sprintf
+              "unknown format %S (choose: yaml, plain, events, value, node)"
               other))
 
 let spec =
   [
     ( "--format",
       Arg.String set_format,
-      "FORMAT  Output format: yaml (default), plain, or events" );
+      "FORMAT  Output format: yaml (default), plain, events, value, or node" );
     ("-f", Arg.String set_format, "FORMAT  Short alias for --format");
     ( "--strict",
       Arg.Set strict,
@@ -108,5 +111,34 @@ let () =
             Printf.eprintf "Plain error: %s\n" msg;
             exit 1
         | s -> s)
+    | Value ->
+        let values =
+          match YAMLx.of_string input with
+          | exception YAMLx.Scan_error e ->
+              Printf.eprintf "Scan error at line %d col %d: %s\n" e.pos.line
+                e.pos.column e.msg;
+              exit 1
+          | exception YAMLx.Parse_error e ->
+              Printf.eprintf "Parse error at line %d col %d: %s\n" e.pos.line
+                e.pos.column e.msg;
+              exit 1
+          | vs -> vs
+        in
+        let buf = Buffer.create 256 in
+        List.iter
+          (fun v ->
+            Buffer.add_string buf (YAMLx.show_value v);
+            Buffer.add_char buf '\n')
+          values;
+        Buffer.contents buf
+    | Node ->
+        let nodes = nodes_or_exit () in
+        let buf = Buffer.create 256 in
+        List.iter
+          (fun n ->
+            Buffer.add_string buf (YAMLx.show_node n);
+            Buffer.add_char buf '\n')
+          nodes;
+        Buffer.contents buf
   in
   print_string output

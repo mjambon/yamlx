@@ -27,6 +27,7 @@ type pos = {
   offset : int;  (** codepoint index from the start of the input *)
   offset_bytes : int;  (** UTF-8 byte offset from the start of the input *)
 }
+[@@deriving show]
 (** A location in the YAML source text. [line] is 1-based. [column] and
     [column_bytes] are 0-based distances from the start of the line, in
     codepoints and UTF-8 bytes respectively. [offset] and [offset_bytes] are
@@ -34,7 +35,7 @@ type pos = {
     byte fields make it easy to slice the original [string] without re-encoding.
 *)
 
-type loc = { start_pos : pos; end_pos : pos }
+type loc = { start_pos : pos; end_pos : pos } [@@deriving show]
 (** A source range. [start_pos] is the first character of the node; [end_pos] is
     the position immediately after the last character. *)
 
@@ -70,6 +71,7 @@ type scalar_style =
   | Double_quoted  (** e.g. ["foo"] *)
   | Literal  (** block scalar [|]: newlines preserved *)
   | Folded  (** block scalar [>]: newlines folded to spaces *)
+[@@deriving show]
 
 (** {1 AST nodes} *)
 
@@ -125,6 +127,7 @@ type node =
       head_comments : string list;
       line_comment : string option;
     }
+[@@deriving show]
 
 (** {1 Typed values} *)
 

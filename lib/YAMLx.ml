@@ -16,8 +16,11 @@ type pos = Types.pos = {
   offset : int;
   offset_bytes : int;
 }
+[@@deriving show { with_path = false }]
 
 type loc = Types.loc = { start_pos : pos; end_pos : pos }
+[@@deriving show { with_path = false }]
+
 type yaml_error = Types.yaml_error = { msg : string; pos : pos }
 
 exception Scan_error = Types.Scan_error
@@ -29,6 +32,7 @@ type scalar_style = Types.scalar_style =
   | Double_quoted
   | Literal
   | Folded
+[@@deriving show { with_path = false }]
 
 type event_kind = Types.event_kind =
   | Stream_start
@@ -100,6 +104,7 @@ type node = Types.node =
       head_comments : string list;
       line_comment : string option;
     }
+[@@deriving show { with_path = false }]
 
 type value = Types.value =
   | Null
