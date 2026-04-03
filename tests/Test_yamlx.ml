@@ -163,6 +163,37 @@ let unit_tests () =
   ]
 
 (* ------------------------------------------------------------------ *)
+(* Encoding detection tests                                              *)
+(* ------------------------------------------------------------------ *)
+
+let encoding_tests () =
+  let check_bom_error label input () =
+    match YAMLx.parse_nodes input with
+    | exception YAMLx.Scan_error { msg; _ }
+      when String.length msg > 6 && String.sub msg 0 6 = "input " ->
+        ()
+    | exception YAMLx.Scan_error { msg; _ } ->
+        failwith (label ^ ": unexpected Scan_error message: " ^ msg)
+    | _ -> failwith (label ^ ": expected Scan_error for non-UTF-8 BOM")
+  in
+  [
+    Testo.create ~category:[ "encoding" ] "UTF-32 BE BOM rejected"
+      (check_bom_error "UTF-32 BE" "\x00\x00\xFE\xFF");
+    Testo.create ~category:[ "encoding" ] "UTF-32 LE BOM rejected"
+      (check_bom_error "UTF-32 LE" "\xFF\xFE\x00\x00");
+    Testo.create ~category:[ "encoding" ] "UTF-16 BE BOM rejected"
+      (check_bom_error "UTF-16 BE" "\xFE\xFF");
+    Testo.create ~category:[ "encoding" ] "UTF-16 LE BOM rejected"
+      (check_bom_error "UTF-16 LE" "\xFF\xFE");
+    Testo.create ~category:[ "encoding" ] "UTF-8 BOM accepted" (fun () ->
+        (* U+FEFF encoded as UTF-8: EF BB BF — should parse fine, BOM is stripped *)
+        let nodes = YAMLx.parse_nodes "\xEF\xBB\xBFhello" in
+        match nodes with
+        | [ YAMLx.Scalar_node { value = "hello"; _ } ] -> ()
+        | _ -> failwith "expected scalar 'hello' after UTF-8 BOM");
+  ]
+
+(* ------------------------------------------------------------------ *)
 (* Round-trip tests                                                       *)
 (* ------------------------------------------------------------------ *)
 
@@ -414,5 +445,5 @@ let suite_tests () =
 
 let () =
   Testo.interpret_argv ~project_name:"yamlx" (fun _tags ->
-      unit_tests () @ roundtrip_tests () @ comment_tests ()
+      unit_tests () @ encoding_tests () @ roundtrip_tests () @ comment_tests ()
       @ expansion_limit_tests () @ performance_tests () @ suite_tests ())

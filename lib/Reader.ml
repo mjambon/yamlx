@@ -125,8 +125,29 @@ type t = {
   mutable column : int;  (** 0-based column (codepoints since last LF) *)
 }
 
+(** Reject non-UTF-8 BOMs before attempting to decode. Called on the raw input
+    bytes before [decode_utf8] so the error message is clear rather than a
+    cryptic "invalid byte" from the UTF-8 decoder. *)
+let check_encoding (s : string) : unit =
+  let b n = if n < String.length s then Char.code s.[n] else -1 in
+  (* Check 4-byte BOMs first (UTF-32 LE starts with the same two bytes as
+     UTF-16 LE, so the longer pattern must win). *)
+  if b 0 = 0x00 && b 1 = 0x00 && b 2 = 0xFE && b 3 = 0xFF then
+    Types.scan_error Types.pos_zero
+      "input appears to be UTF-32 BE (BOM detected); only UTF-8 is supported"
+  else if b 0 = 0xFF && b 1 = 0xFE && b 2 = 0x00 && b 3 = 0x00 then
+    Types.scan_error Types.pos_zero
+      "input appears to be UTF-32 LE (BOM detected); only UTF-8 is supported"
+  else if b 0 = 0xFE && b 1 = 0xFF then
+    Types.scan_error Types.pos_zero
+      "input appears to be UTF-16 BE (BOM detected); only UTF-8 is supported"
+  else if b 0 = 0xFF && b 1 = 0xFE then
+    Types.scan_error Types.pos_zero
+      "input appears to be UTF-16 LE (BOM detected); only UTF-8 is supported"
+
 (** Create a Reader from a UTF-8 string. *)
 let of_string (s : string) : t =
+  check_encoding s;
   let raw = decode_utf8 s in
   let buf = normalize raw in
   { buf; idx = 0; line = 1; column = 0 }
