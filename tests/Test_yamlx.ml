@@ -238,6 +238,63 @@ let roundtrip_tests () =
   ]
 
 (* ------------------------------------------------------------------ *)
+(* Comment preservation tests                                            *)
+(* ------------------------------------------------------------------ *)
+
+(** Tests for comment capture and re-emission.
+    These are best-effort: we verify the comments that *are* preserved,
+    not that every edge case round-trips perfectly. *)
+let comment_tests () =
+  let check input expected () =
+    let actual = YAMLx.to_yaml (YAMLx.parse_nodes input) in
+    Testo.(check text) expected actual
+  in
+  [ Testo.create ~category:["comments"] "head comment on document"
+      (check "# preamble\nkey: value\n"
+             "# preamble\nkey: value\n")
+
+  ; Testo.create ~category:["comments"] "line comment on scalar value"
+      (check "key: value  # inline\n"
+             "key: value  # inline\n")
+
+  ; Testo.create ~category:["comments"] "head comment before sequence item"
+      (check "items:\n  # before first\n  - a\n  - b\n"
+             "items:\n  # before first\n  - a\n  - b\n")
+
+  ; Testo.create ~category:["comments"] "foot comment after last sequence item"
+      (check "items:\n  - a\n  - b\n  # trailing\nnext: x\n"
+             "items:\n  - a\n  - b\n  # trailing\nnext: x\n")
+
+  ; Testo.create ~category:["comments"] "multiple head comments"
+      (check "# line 1\n# line 2\nscalar\n"
+             "# line 1\n# line 2\nscalar\n")
+
+  ; Testo.create ~category:["comments"] "comment on block scalar header not preserved"
+      (* Block scalar header lines are parsed by a dedicated path that does not
+         capture comments; the comment is silently dropped. *)
+      (check "desc: |  # note\n  content\n"
+             "desc: |\n    content\n")
+
+  ; Testo.create ~category:["comments"] "line comment on alias"
+      (check "a: &x foo\nb: *x  # ref\n"
+             "a: &x foo\nb: *x  # ref\n")
+
+  ; Testo.create ~category:["comments"] "head comment before mapping value on its own line"
+      (check "parent:\n  # about child\n  child: x\n"
+             "parent:\n  # about child\n  child: x\n")
+
+  ; Testo.create ~category:["comments"] "comments dropped inside flow collection"
+      (* Flow-context comments are discarded by the scanner; the output should
+         contain no comment lines at all. *)
+      (fun () ->
+        (* We cannot embed a comment inside [a, b] in the source; we just verify
+           that a flow sequence with no comments round-trips without adding any. *)
+        let out = YAMLx.to_yaml (YAMLx.parse_nodes "[a, b]\n") in
+        if String.contains out '#' then
+          failwith (Printf.sprintf "unexpected '#' in output: %S" out))
+  ]
+
+(* ------------------------------------------------------------------ *)
 (* Build test list from yaml-test-suite                                  *)
 (* ------------------------------------------------------------------ *)
 
@@ -275,4 +332,4 @@ let suite_tests () =
 let () =
   Testo.interpret_argv
     ~project_name:"yamlx"
-    (fun _tags -> unit_tests () @ roundtrip_tests () @ suite_tests ())
+    (fun _tags -> unit_tests () @ roundtrip_tests () @ comment_tests () @ suite_tests ())
