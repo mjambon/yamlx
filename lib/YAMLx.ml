@@ -9,7 +9,14 @@
    The sharing syntax 'type t = Types.t = ...' satisfies both the
    compiler (same physical type) and the mli (no mention of Types). *)
 
-type pos = Types.pos = { line : int; column : int; offset : int }
+type pos = Types.pos = {
+  line : int;
+  column : int;
+  column_bytes : int;
+  offset : int;
+  offset_bytes : int;
+}
+
 type loc = Types.loc = { start_pos : pos; end_pos : pos }
 type yaml_error = Types.yaml_error = { msg : string; pos : pos }
 

@@ -22,12 +22,17 @@
 
 type pos = {
   line : int;
-  column : int;
+  column : int;  (** 0-based Unicode codepoint column *)
+  column_bytes : int;  (** 0-based UTF-8 byte column *)
   offset : int;  (** codepoint index from the start of the input *)
+  offset_bytes : int;  (** UTF-8 byte offset from the start of the input *)
 }
-(** A location in the YAML source text. [line] is 1-based; [column] is 0-based
-    (Unicode codepoints from the start of the line, matching the YAML
-    specification). *)
+(** A location in the YAML source text. [line] is 1-based. [column] and
+    [column_bytes] are 0-based distances from the start of the line, in
+    codepoints and UTF-8 bytes respectively. [offset] and [offset_bytes] are
+    absolute distances from the start of the input, measured the same way. The
+    byte fields make it easy to slice the original [string] without re-encoding.
+*)
 
 type loc = { start_pos : pos; end_pos : pos }
 (** A source range. [start_pos] is the first character of the node; [end_pos] is

@@ -120,10 +120,19 @@ let normalize (raw : int array) : int array =
 
 type t = {
   buf : int array;  (** normalized Unicode codepoints *)
-  mutable idx : int;  (** current position in [buf] *)
+  mutable idx : int;  (** current codepoint index in [buf] *)
+  mutable byte_idx : int;  (** corresponding UTF-8 byte offset *)
   mutable line : int;  (** 1-based line number *)
-  mutable column : int;  (** 0-based column (codepoints since last LF) *)
+  mutable column : int;  (** 0-based codepoint column (since last LF) *)
+  mutable column_bytes : int;  (** 0-based UTF-8 byte column (since last LF) *)
 }
+
+(** Number of UTF-8 bytes needed to encode codepoint [cp]. *)
+let utf8_length cp =
+  if cp <= 0x7F then 1
+  else if cp <= 0x7FF then 2
+  else if cp <= 0xFFFF then 3
+  else 4
 
 (** Reject non-UTF-8 BOMs before attempting to decode. Called on the raw input
     bytes before [decode_utf8] so the error message is clear rather than a
@@ -150,7 +159,7 @@ let of_string (s : string) : t =
   check_encoding s;
   let raw = decode_utf8 s in
   let buf = normalize raw in
-  { buf; idx = 0; line = 1; column = 0 }
+  { buf; idx = 0; byte_idx = 0; line = 1; column = 0; column_bytes = 0 }
 
 (** Total number of codepoints in the input. *)
 let length (r : t) : int = Array.length r.buf
@@ -159,7 +168,14 @@ let length (r : t) : int = Array.length r.buf
 let at_end (r : t) : bool = r.idx >= Array.length r.buf
 
 (** The current position as a [Types.pos]. *)
-let pos (r : t) : pos = { line = r.line; column = r.column; offset = r.idx }
+let pos (r : t) : pos =
+  {
+    line = r.line;
+    column = r.column;
+    column_bytes = r.column_bytes;
+    offset = r.idx;
+    offset_bytes = r.byte_idx;
+  }
 
 (** Look ahead without consuming. [peek r 0] is the current character. Returns
     [eof] past the end of input. *)
@@ -167,19 +183,25 @@ let peek (r : t) (ahead : int) : int =
   let i = r.idx + ahead in
   if i >= Array.length r.buf then eof else Array.unsafe_get r.buf i
 
-(** Advance by [n] codepoints, updating line and column. *)
+(** Advance by [n] codepoints, updating all position fields. *)
 let advance (r : t) (n : int) : unit =
   let limit = Array.length r.buf in
   for _ = 1 to n do
     if r.idx < limit then begin
       let cp = Array.unsafe_get r.buf r.idx in
+      let blen = utf8_length cp in
       r.idx <- r.idx + 1;
+      r.byte_idx <- r.byte_idx + blen;
       if cp = 0x0A then begin
-        (* LF resets the column *)
+        (* LF resets both column counters *)
         r.line <- r.line + 1;
-        r.column <- 0
+        r.column <- 0;
+        r.column_bytes <- 0
       end
-      else r.column <- r.column + 1
+      else begin
+        r.column <- r.column + 1;
+        r.column_bytes <- r.column_bytes + blen
+      end
     end
   done
 
