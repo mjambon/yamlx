@@ -74,6 +74,7 @@ type node = Types.node =
       value : string;
       style : scalar_style;
       loc : loc;
+      height : int;
       head_comments : string list;
       line_comment : string option;
     }
@@ -83,6 +84,7 @@ type node = Types.node =
       items : node list;
       flow : bool;
       loc : loc;
+      height : int;
       head_comments : string list;
       line_comment : string option;
       foot_comments : string list;
@@ -93,6 +95,7 @@ type node = Types.node =
       pairs : (node * node) list;
       flow : bool;
       loc : loc;
+      height : int;
       head_comments : string list;
       line_comment : string option;
       foot_comments : string list;
@@ -101,6 +104,7 @@ type node = Types.node =
       name : string;
       resolved : node;
       loc : loc;
+      height : int;
       head_comments : string list;
       line_comment : string option;
     }
@@ -115,6 +119,30 @@ type value = Types.value =
   | Seq of loc * value list
   | Map of loc * (loc * value * value) list
 [@@deriving show { with_path = false }]
+
+(** Extract the precomputed height from any node variant. *)
+let node_height : node -> int = function
+  | Scalar_node r -> r.height
+  | Sequence_node r -> r.height
+  | Mapping_node r -> r.height
+  | Alias_node r -> r.height
+
+(** Compute the height of a value tree (maximum depth from root to leaf). Leaf
+    values (Null, Bool, Int, Float, String) have height 1. *)
+let rec value_height : value -> int = function
+  | Null _
+  | Bool _
+  | Int _
+  | Float _
+  | String _ ->
+      1
+  | Seq (_, items) ->
+      1 + List.fold_left (fun acc v -> max acc (value_height v)) 0 items
+  | Map (_, pairs) ->
+      1
+      + List.fold_left
+          (fun acc (_, k, v) -> max acc (max (value_height k) (value_height v)))
+          0 pairs
 
 (** Structural equality that ignores source locations. *)
 let rec equal_value a b =
@@ -153,9 +181,10 @@ let parse_events (input : string) : event list =
 (* Public API — Nodes                                                    *)
 (* ------------------------------------------------------------------ *)
 
-let parse_nodes (input : string) : node list =
+let parse_nodes ?(max_depth = Types.default_max_depth) (input : string) :
+    node list =
   let parser_ = make_pipeline input in
-  let composer = Composer.create parser_ in
+  let composer = Composer.create ~max_depth parser_ in
   let nodes = Composer.compose_stream composer in
   let raw_comments = Scanner.drain_comments (Parser.get_scanner parser_) in
   Comment_attacher.attach nodes raw_comments
@@ -176,17 +205,21 @@ let to_plain_yaml ?strict ?expansion_limit =
 (* ------------------------------------------------------------------ *)
 
 exception Expansion_limit_exceeded = Types.Expansion_limit_exceeded
+exception Depth_limit_exceeded = Types.Depth_limit_exceeded
 
 let default_expansion_limit = Types.default_expansion_limit
+let default_max_depth = Types.default_max_depth
 
-let of_string ?(expansion_limit = Types.default_expansion_limit)
-    (input : string) : value list =
-  let nodes = parse_nodes input in
+let of_string ?(max_depth = Types.default_max_depth)
+    ?(expansion_limit = Types.default_expansion_limit) (input : string) :
+    value list =
+  let nodes = parse_nodes ~max_depth input in
   Resolver.resolve_documents ~expansion_limit nodes
 
-let one_of_string ?(expansion_limit = Types.default_expansion_limit)
-    (input : string) : value =
-  match of_string ~expansion_limit input with
+let one_of_string ?(max_depth = Types.default_max_depth)
+    ?(expansion_limit = Types.default_expansion_limit) (input : string) : value
+    =
+  match of_string ~max_depth ~expansion_limit input with
   | [] -> raise Not_found
   | v :: _ -> v
 
@@ -197,13 +230,16 @@ let one_of_string ?(expansion_limit = Types.default_expansion_limit)
 let string_of_error (e : yaml_error) : string =
   Printf.sprintf "line %d, column %d: %s" e.pos.line e.pos.column e.msg
 
-let of_string_result ?(expansion_limit = Types.default_expansion_limit)
-    (input : string) : (value list, string) result =
-  try Ok (of_string ~expansion_limit input) with
+let of_string_result ?(max_depth = Types.default_max_depth)
+    ?(expansion_limit = Types.default_expansion_limit) (input : string) :
+    (value list, string) result =
+  try Ok (of_string ~max_depth ~expansion_limit input) with
   | Scan_error e -> Error ("scan error: " ^ string_of_error e)
   | Parse_error e -> Error ("parse error: " ^ string_of_error e)
   | Expansion_limit_exceeded n ->
       Error (Printf.sprintf "expansion limit exceeded (%d nodes)" n)
+  | Depth_limit_exceeded n ->
+      Error (Printf.sprintf "depth limit exceeded (%d levels)" n)
 
 (* ------------------------------------------------------------------ *)
 (* Event printing — internal helpers for tests and the CLI tool         *)

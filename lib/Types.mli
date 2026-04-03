@@ -40,8 +40,15 @@ exception Expansion_limit_exceeded of int
 (** Raised when alias expansion visits more than the configured number of nodes.
     The payload is the limit that was exceeded. *)
 
+exception Depth_limit_exceeded of int
+(** Raised when the YAML nesting depth during composition exceeds the configured
+    maximum. The payload is the limit that was exceeded. *)
+
 val default_expansion_limit : int
 (** Default node-visit budget for alias expansion (1,000,000). *)
+
+val default_max_depth : int
+(** Default maximum nesting depth (512). *)
 
 val scan_error : pos -> ('a, unit, string, 'b) format4 -> 'a
 val parse_error : pos -> ('a, unit, string, 'b) format4 -> 'a
@@ -143,6 +150,7 @@ type node =
       value : string;
       style : scalar_style;
       loc : loc;
+      height : int;
       head_comments : string list;
       line_comment : string option;
     }
@@ -152,6 +160,7 @@ type node =
       items : node list;
       flow : bool;
       loc : loc;
+      height : int;
       head_comments : string list;
       line_comment : string option;
       foot_comments : string list;
@@ -162,6 +171,7 @@ type node =
       pairs : (node * node) list;
       flow : bool;
       loc : loc;
+      height : int;
       head_comments : string list;
       line_comment : string option;
       foot_comments : string list;
@@ -170,6 +180,7 @@ type node =
       name : string;
       resolved : node;
       loc : loc;
+      height : int;
       head_comments : string list;
       line_comment : string option;
     }

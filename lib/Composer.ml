@@ -14,9 +14,14 @@ open Types
 (* Composer state                                                        *)
 (* ------------------------------------------------------------------ *)
 
-type t = { parser_ : Parser.t; anchors : (string, node) Hashtbl.t }
+type t = {
+  parser_ : Parser.t;
+  anchors : (string, node) Hashtbl.t;
+  max_depth : int;
+}
 
-let create (parser_ : Parser.t) : t = { parser_; anchors = Hashtbl.create 16 }
+let create ?(max_depth = Types.default_max_depth) (parser_ : Parser.t) : t =
+  { parser_; anchors = Hashtbl.create 16; max_depth }
 
 (* ------------------------------------------------------------------ *)
 (* Helpers                                                               *)
@@ -29,11 +34,21 @@ let register_anchor c name node = Hashtbl.replace c.anchors name node
 (* Node composition                                                      *)
 (* ------------------------------------------------------------------ *)
 
-(** Compose a single node from the next event(s) in the stream. Precondition:
-    the next event is the *start* of a node (i.e. not a *_end or document
-    event). *)
-let rec compose_node (c : t) : node =
+(** Extract the height stored in any node variant. *)
+let node_height : node -> int = function
+  | Scalar_node r -> r.height
+  | Sequence_node r -> r.height
+  | Mapping_node r -> r.height
+  | Alias_node r -> r.height
+
+(** Compose a single node from the next event(s) in the stream. [depth] is the
+    current nesting depth (1 at document level). Raises
+    {!Types.Depth_limit_exceeded} when [depth] exceeds [c.max_depth].
+    Precondition: the next event is the *start* of a node (i.e. not a *_end or
+    document event). *)
+let rec compose_node (c : t) ~(depth : int) : node =
   let ev = get_ev c in
+  if depth > c.max_depth then raise (Types.Depth_limit_exceeded c.max_depth);
   match ev.kind with
   | Alias name -> (
       match Hashtbl.find_opt c.anchors name with
@@ -43,6 +58,7 @@ let rec compose_node (c : t) : node =
               name;
               resolved = target;
               loc = { start_pos = ev.start_pos; end_pos = ev.end_pos };
+              height = 1 + node_height target;
               head_comments = [];
               line_comment = None;
             }
@@ -56,6 +72,7 @@ let rec compose_node (c : t) : node =
             value;
             style;
             loc = { start_pos = ev.start_pos; end_pos = ev.end_pos };
+            height = 1;
             head_comments = [];
             line_comment = None;
           }
@@ -74,16 +91,21 @@ let rec compose_node (c : t) : node =
             let end_ev = get_ev c in
             end_pos := end_ev.end_pos;
             stop := true
-        | _ -> items := compose_node c :: !items
+        | _ -> items := compose_node c ~depth:(depth + 1) :: !items
       done;
+      let items_list = List.rev !items in
+      let h =
+        1 + List.fold_left (fun acc n -> max acc (node_height n)) 0 items_list
+      in
       let node =
         Sequence_node
           {
             anchor;
             tag;
-            items = List.rev !items;
+            items = items_list;
             flow;
             loc = { start_pos; end_pos = !end_pos };
+            height = h;
             head_comments = [];
             line_comment = None;
             foot_comments = [];
@@ -104,18 +126,26 @@ let rec compose_node (c : t) : node =
             end_pos := end_ev.end_pos;
             stop := true
         | _ ->
-            let key = compose_node c in
-            let value = compose_node c in
+            let key = compose_node c ~depth:(depth + 1) in
+            let value = compose_node c ~depth:(depth + 1) in
             pairs := (key, value) :: !pairs
       done;
+      let pairs_list = List.rev !pairs in
+      let h =
+        1
+        + List.fold_left
+            (fun acc (k, v) -> max acc (max (node_height k) (node_height v)))
+            0 pairs_list
+      in
       let node =
         Mapping_node
           {
             anchor;
             tag;
-            pairs = List.rev !pairs;
+            pairs = pairs_list;
             flow;
             loc = { start_pos; end_pos = !end_pos };
+            height = h;
             head_comments = [];
             line_comment = None;
             foot_comments = [];
@@ -134,7 +164,7 @@ let compose_document (c : t) : node =
   (match start_ev.kind with
   | Document_start _ -> ()
   | _ -> Types.parse_error start_ev.start_pos "expected DOCUMENT_START");
-  let node = compose_node c in
+  let node = compose_node c ~depth:1 in
   (* Consume DOCUMENT_END *)
   let end_ev = get_ev c in
   (match end_ev.kind with

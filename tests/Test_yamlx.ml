@@ -373,6 +373,62 @@ let expansion_limit_tests () =
   ]
 
 (* ------------------------------------------------------------------ *)
+(* Depth limit tests                                                     *)
+(* ------------------------------------------------------------------ *)
+
+let depth_limit_tests () =
+  [
+    Testo.create ~category:[ "depth-limit" ]
+      "deeply nested input raises Depth_limit_exceeded via parse_nodes"
+      (fun () ->
+        let n = YAMLx.default_max_depth + 1 in
+        let input = String.make n '[' ^ String.make n ']' in
+        match YAMLx.parse_nodes input with
+        | exception YAMLx.Depth_limit_exceeded lim ->
+            assert (lim = YAMLx.default_max_depth)
+        | _ -> failwith "expected Depth_limit_exceeded");
+    Testo.create ~category:[ "depth-limit" ]
+      "deeply nested input raises Depth_limit_exceeded via of_string" (fun () ->
+        let n = YAMLx.default_max_depth + 1 in
+        let input = String.make n '[' ^ String.make n ']' in
+        match YAMLx.of_string input with
+        | exception YAMLx.Depth_limit_exceeded _ -> ()
+        | _ -> failwith "expected Depth_limit_exceeded");
+    Testo.create ~category:[ "depth-limit" ]
+      "depth limit is Error via of_string_result" (fun () ->
+        let n = YAMLx.default_max_depth + 1 in
+        let input = String.make n '[' ^ String.make n ']' in
+        match YAMLx.of_string_result input with
+        | Error msg when String.length msg >= 5 && String.sub msg 0 5 = "depth"
+          ->
+            ()
+        | Ok _ -> failwith "expected Error"
+        | Error msg -> failwith ("unexpected error message: " ^ msg));
+    Testo.create ~category:[ "depth-limit" ] "custom low limit is respected"
+      (fun () ->
+        match YAMLx.parse_nodes ~max_depth:2 "[[a]]" with
+        | exception YAMLx.Depth_limit_exceeded 2 -> ()
+        | _ -> failwith "expected Depth_limit_exceeded 2");
+    Testo.create ~category:[ "depth-limit" ]
+      "input exactly at the limit is accepted" (fun () ->
+        let n = YAMLx.default_max_depth in
+        let input = String.make n '[' ^ String.make n ']' in
+        ignore (YAMLx.parse_nodes input));
+    Testo.create ~category:[ "depth-limit" ]
+      "node_height reflects correct subtree height" (fun () ->
+        match YAMLx.parse_nodes "- - a\n  - b\n" with
+        | [ node ] ->
+            (* outer sequence has height 3: seq → seq → scalar *)
+            assert (YAMLx.node_height node = 3)
+        | _ -> failwith "expected one document");
+    Testo.create ~category:[ "depth-limit" ]
+      "value_height reflects correct subtree height" (fun () ->
+        match YAMLx.of_string "- - 1\n  - 2\n" with
+        | [ v ] -> assert (YAMLx.value_height v = 3)
+        | _ -> failwith "expected one document");
+  ]
+
+(* ------------------------------------------------------------------ *)
 (* Performance / scalability tests                                       *)
 (* ------------------------------------------------------------------ *)
 
@@ -387,7 +443,7 @@ let performance_tests () =
         let time n =
           let input = String.make n '[' ^ String.make n ']' in
           let t0 = Unix.gettimeofday () in
-          (try ignore (YAMLx.parse_nodes input) with
+          (try ignore (YAMLx.parse_nodes ~max_depth:n input) with
           | _ -> ());
           Unix.gettimeofday () -. t0
         in
@@ -446,4 +502,5 @@ let suite_tests () =
 let () =
   Testo.interpret_argv ~project_name:"yamlx" (fun _tags ->
       unit_tests () @ encoding_tests () @ roundtrip_tests () @ comment_tests ()
-      @ expansion_limit_tests () @ performance_tests () @ suite_tests ())
+      @ expansion_limit_tests () @ depth_limit_tests () @ performance_tests ()
+      @ suite_tests ())

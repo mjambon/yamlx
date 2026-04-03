@@ -41,10 +41,19 @@ exception Expansion_limit_exceeded of int
     The payload is the limit that was exceeded. See {!default_expansion_limit}.
 *)
 
+exception Depth_limit_exceeded of int
+(** Raised when the YAML nesting depth during composition exceeds the configured
+    maximum. The payload is the limit that was exceeded. See
+    {!default_max_depth}. *)
+
 (** Default maximum number of nodes that may be visited during alias expansion.
     Applies to both {!Resolver.resolve_documents} and {!Printer.to_plain_yaml}.
 *)
 let default_expansion_limit = 1_000_000
+
+(** Default maximum nesting depth accepted during composition. Inputs deeper
+    than this raise {!Depth_limit_exceeded}. *)
+let default_max_depth = 512
 
 let scan_error pos fmt =
   Printf.ksprintf (fun msg -> raise (Scan_error { msg; pos })) fmt
@@ -149,6 +158,7 @@ type node =
       value : string;
       style : scalar_style;
       loc : loc;
+      height : int;
       head_comments : string list;
       line_comment : string option;
     }
@@ -158,6 +168,7 @@ type node =
       items : node list;
       flow : bool;
       loc : loc;
+      height : int;
       head_comments : string list;
       line_comment : string option;
       foot_comments : string list;
@@ -168,6 +179,7 @@ type node =
       pairs : (node * node) list;
       flow : bool;
       loc : loc;
+      height : int;
       head_comments : string list;
       line_comment : string option;
       foot_comments : string list;
@@ -176,6 +188,7 @@ type node =
       name : string;
       resolved : node;
       loc : loc;
+      height : int;
       head_comments : string list;
       line_comment : string option;
     }

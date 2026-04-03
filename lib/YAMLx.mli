@@ -56,9 +56,20 @@ exception Expansion_limit_exceeded of int
     {!of_string}, {!one_of_string}, {!of_string_result}, or {!to_plain_yaml} to
     adjust the threshold. See also {!default_expansion_limit}. *)
 
+exception Depth_limit_exceeded of int
+(** Raised when the YAML nesting depth exceeds [~max_depth] during composition.
+    The payload is the limit that was exceeded. Use [~max_depth] on
+    {!parse_nodes}, {!of_string}, {!one_of_string}, or {!of_string_result} to
+    adjust the threshold. See also {!default_max_depth}. *)
+
 val default_expansion_limit : int
 (** Default node-visit budget used by all alias-expanding functions (1,000,000).
 *)
+
+val default_max_depth : int
+(** Default maximum nesting depth accepted during parsing (512). Inputs with
+    more than this many levels of nested collections raise
+    {!Depth_limit_exceeded}. *)
 
 (** {1 Scalar styles} *)
 
@@ -97,6 +108,7 @@ type node =
       value : string;
       style : scalar_style;
       loc : loc;
+      height : int;  (** always 1 for scalars *)
       head_comments : string list;
       line_comment : string option;
     }
@@ -106,6 +118,7 @@ type node =
       items : node list;
       flow : bool;  (** true for [[a, b]] style, false for block *)
       loc : loc;
+      height : int;  (** 1 + max height of items, or 1 if empty *)
       head_comments : string list;
       line_comment : string option;
       foot_comments : string list;
@@ -116,6 +129,7 @@ type node =
       pairs : (node * node) list;
       flow : bool;  (** true for [{a: b}] style, false for block *)
       loc : loc;
+      height : int;  (** 1 + max height of keys and values, or 1 if empty *)
       head_comments : string list;
       line_comment : string option;
       foot_comments : string list;
@@ -124,6 +138,7 @@ type node =
       name : string;  (** the anchor name, without the [*] *)
       resolved : node;
       loc : loc;
+      height : int;  (** 1 + height of the resolved node *)
       head_comments : string list;
       line_comment : string option;
     }
@@ -156,11 +171,21 @@ val equal_value : value -> value -> bool
 
 (** {1 Parsing} *)
 
-val parse_nodes : string -> node list
+val parse_nodes : ?max_depth:int -> string -> node list
 (** Parse [input] and return one {!node} per YAML document. Use this when you
-    need tags, anchors, scalar styles, or source positions. For simple data
-    extraction, prefer {!of_string}. Raises {!Scan_error} or {!Parse_error} on
-    malformed input. *)
+    need tags, anchors, scalar styles, source positions, or subtree heights. For
+    simple data extraction, prefer {!of_string}. Raises {!Scan_error} or
+    {!Parse_error} on malformed input. Raises {!Depth_limit_exceeded} when
+    nesting exceeds [max_depth] (default: {!default_max_depth}). *)
+
+val node_height : node -> int
+(** Return the precomputed height of a node: the number of nodes on the longest
+    path from this node to a leaf. Scalars have height 1; collections have
+    [1 + max(child heights)]; aliases have [1 + height(resolved)]. *)
+
+val value_height : value -> int
+(** Compute the height of a value tree. Leaf values have height 1; [Seq] and
+    [Map] have [1 + max(child heights)]. O(n) in the size of the tree. *)
 
 val to_yaml : node list -> string
 (** Serialize [docs] back into a YAML string. Scalar styles ([Plain],
@@ -188,17 +213,18 @@ val to_plain_yaml : ?strict:bool -> ?expansion_limit:int -> node list -> string
     The result contains only scalars, block sequences, and block mappings with
     scalar keys — no YAML-specific features. *)
 
-val of_string : ?expansion_limit:int -> string -> value list
+val of_string : ?max_depth:int -> ?expansion_limit:int -> string -> value list
 (** Parse [input] and resolve each document to a typed {!value} using the YAML
     1.2 JSON schema. Raises {!Scan_error} or {!Parse_error} on malformed input.
-    Raises {!Expansion_limit_exceeded} if alias expansion exceeds
-    [expansion_limit] (default: {!default_expansion_limit}). *)
+    Raises {!Depth_limit_exceeded} when nesting exceeds [max_depth] (default:
+    {!default_max_depth}). Raises {!Expansion_limit_exceeded} if alias expansion
+    exceeds [expansion_limit] (default: {!default_expansion_limit}). *)
 
-val one_of_string : ?expansion_limit:int -> string -> value
+val one_of_string : ?max_depth:int -> ?expansion_limit:int -> string -> value
 (** Parse [input] and return the first document's value. Raises [Not_found] if
     the stream contains no documents. Raises {!Scan_error} or {!Parse_error} on
-    malformed input. Raises {!Expansion_limit_exceeded} if alias expansion
-    exceeds [expansion_limit] (default: {!default_expansion_limit}). *)
+    malformed input. Raises {!Depth_limit_exceeded} or
+    {!Expansion_limit_exceeded} on limit violations. *)
 
 (** {1 Error handling} *)
 
@@ -206,7 +232,10 @@ val string_of_error : yaml_error -> string
 (** Format a {!yaml_error} as ["line L, column C: message"]. *)
 
 val of_string_result :
-  ?expansion_limit:int -> string -> (value list, string) result
+  ?max_depth:int ->
+  ?expansion_limit:int ->
+  string ->
+  (value list, string) result
 (** Like {!of_string} but returns [Ok values] or [Error msg] instead of raising
     exceptions. {!Expansion_limit_exceeded} is also converted to [Error]. *)
 
