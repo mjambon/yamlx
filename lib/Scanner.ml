@@ -117,7 +117,7 @@ let advance scn n = Reader.advance scn.reader n
 let pos scn = Reader.pos scn.reader
 let column scn = (pos scn).column
 
-(** Consume one line-break (LF, already normalised by Reader) and update
+(** Consume one line-break (LF, already normalized by Reader) and update
     allow_simple_key. *)
 let scan_line_break scn =
   let cp = peek scn 0 in

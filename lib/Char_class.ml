@@ -12,7 +12,7 @@ let eof = -1
     double-quoted scalars but forbidden in bare content. *)
 let is_null cp = cp = 0x00
 
-(** True for any YAML line-break character (post-normalisation these are all
+(** True for any YAML line-break character (post-normalization these are all
     U+000A, but we test for the originals too for safety). *)
 let is_linebreak cp =
   cp = 0x0A (* LF / newline *)

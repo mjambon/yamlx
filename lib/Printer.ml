@@ -137,10 +137,10 @@ let block_scalar ?(lc = None) marker s level =
   Buffer.contents b
 
 (* ------------------------------------------------------------------ *)
-(* Flow serialisation                                                    *)
+(* Flow serialization                                                    *)
 (* ------------------------------------------------------------------ *)
 
-(** Serialise [node] in flow (inline) context. [Literal] and [Folded] scalars
+(** Serialize [node] in flow (inline) context. [Literal] and [Folded] scalars
     fall back to double-quoted since block styles are not allowed inside flow
     collections. *)
 let rec flow node =
@@ -179,7 +179,7 @@ let node_head_comments = function
   | Alias_node r -> r.head_comments
 
 (* ------------------------------------------------------------------ *)
-(* Block serialisation                                                   *)
+(* Block serialization                                                   *)
 (* ------------------------------------------------------------------ *)
 
 (** True if [node] is a non-empty block (non-flow) sequence or mapping. Such
@@ -189,7 +189,7 @@ let is_block_collection = function
   | Mapping_node { flow = false; pairs = _ :: _; _ } -> true
   | _ -> false
 
-(** Serialise [node] as a block-context value at the given indentation [level].
+(** Serialize [node] as a block-context value at the given indentation [level].
 
     Returns [(needs_own_line, content)] where:
     - [needs_own_line = false]: the caller should write ["key: " ^ content] or
@@ -275,7 +275,7 @@ and map_pair ~level key value =
   let key_heads = emit_heads ~level (node_head_comments key) in
   (* Mapping keys are always written in inline form; block styles fall
      back to double-quoted since they cannot span multiple lines in a key
-     position.  Complex (non-scalar) keys are serialised as flow nodes. *)
+     position.  Complex (non-scalar) keys are serialized as flow nodes. *)
   let key_str =
     match key with
     | Scalar_node { anchor; tag; value = v; style; _ } -> (
@@ -301,23 +301,23 @@ and map_pair ~level key value =
   else key_heads ^ ind ^ key_str ^ ": " ^ val_str
 
 (* ------------------------------------------------------------------ *)
-(* Plain normalisation                                                   *)
+(* Plain normalization                                                   *)
 (* ------------------------------------------------------------------ *)
 
 exception Plain_error of string
 (** Raised by {!to_plain_yaml} when the input contains a feature that plain YAML
     does not allow: an explicit tag or a complex mapping key. *)
 
-(** Normalise a node for plain-YAML output:
+(** Normalize a node for plain-YAML output:
     - Expand aliases (substitute the resolved node recursively).
     - Strip all anchor declarations.
     - If [strict], raise [Plain_error] on any explicit tag; otherwise strip the
       tag silently.
     - Raise [Plain_error] on any complex (non-scalar) mapping key.
     - Convert all flow collections to block style. *)
-let rec normalise_plain ~strict node =
+let rec normalize_plain ~strict node =
   match node with
-  | Alias_node { resolved; _ } -> normalise_plain ~strict resolved
+  | Alias_node { resolved; _ } -> normalize_plain ~strict resolved
   | Scalar_node { tag = Some t; _ } when strict ->
       raise
         (Plain_error
@@ -334,7 +334,7 @@ let rec normalise_plain ~strict node =
           anchor = None;
           tag = None;
           flow = false;
-          items = List.map (normalise_plain ~strict) r.items;
+          items = List.map (normalize_plain ~strict) r.items;
         }
   | Mapping_node { tag = Some t; _ } when strict ->
       raise
@@ -344,7 +344,7 @@ let rec normalise_plain ~strict node =
       let pairs =
         List.map
           (fun (k, v) ->
-            let k' = normalise_plain ~strict k in
+            let k' = normalize_plain ~strict k in
             (match k' with
             | Sequence_node _
             | Mapping_node _ ->
@@ -352,7 +352,7 @@ let rec normalise_plain ~strict node =
                   (Plain_error
                      "complex mapping keys are not allowed in plain YAML")
             | _ -> ());
-            (k', normalise_plain ~strict v))
+            (k', normalize_plain ~strict v))
           r.pairs
       in
       Mapping_node { r with anchor = None; tag = None; flow = false; pairs }
@@ -361,7 +361,7 @@ let rec normalise_plain ~strict node =
 (* Document / stream                                                     *)
 (* ------------------------------------------------------------------ *)
 
-(** Serialise a list of YAML documents into a single string. The first document
+(** Serialize a list of YAML documents into a single string. The first document
     is emitted without a [---] marker unless it is preceded by a tag-directive
     or version-directive (not tracked here). Every subsequent document is
     preceded by [---]. *)
@@ -396,4 +396,4 @@ let to_yaml (docs : node list) : string =
     [strict = true]), complex mapping keys raise {!Plain_error}, and all flow
     collections are converted to block style. *)
 let to_plain_yaml ?(strict = false) (docs : node list) : string =
-  to_yaml (List.map (normalise_plain ~strict) docs)
+  to_yaml (List.map (normalize_plain ~strict) docs)

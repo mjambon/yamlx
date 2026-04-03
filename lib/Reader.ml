@@ -1,6 +1,6 @@
 (** UTF-8 input reader for the YAML scanner. Decodes the input string into an
     array of Unicode codepoints (int values), skips an optional byte-order mark
-    (BOM, U+FEFF) at the start, and normalises all line endings to LF (U+000A):
+    (BOM, U+FEFF) at the start, and normalizes all line endings to LF (U+000A):
     * CR+LF (\r\n) → LF * CR (\r) → LF * NEL (\x85) → LF * LS (\u2028) → LF * PS
     (\u2029) → LF Tracks the current position (codepoint index, line, column)
     and exposes a small lookahead interface used by the Scanner. *)
@@ -85,12 +85,12 @@ let encode_utf8 (buf : Buffer.t) (cp : int) : unit =
   end
 
 (* ------------------------------------------------------------------ *)
-(* Line-ending normalisation                                            *)
+(* Line-ending normalization                                            *)
 (* ------------------------------------------------------------------ *)
 
-(** Normalise line endings and strip an optional leading BOM. Returns a fresh
-    array containing the normalised codepoints. *)
-let normalise (raw : int array) : int array =
+(** Normalize line endings and strip an optional leading BOM. Returns a fresh
+    array containing the normalized codepoints. *)
+let normalize (raw : int array) : int array =
   let n = Array.length raw in
   let out = Array.make (n + 1) 0 in
   let j = ref 0 in
@@ -101,7 +101,7 @@ let normalise (raw : int array) : int array =
     let cp = Array.unsafe_get raw !i in
     let norm =
       if cp = 0x0D then begin
-        (* CR: normalise to LF, consume a following LF if present *)
+        (* CR: normalize to LF, consume a following LF if present *)
         if !i + 1 < n && Array.unsafe_get raw (!i + 1) = 0x0A then incr i;
         0x0A
       end
@@ -119,7 +119,7 @@ let normalise (raw : int array) : int array =
 (* ------------------------------------------------------------------ *)
 
 type t = {
-  buf : int array;  (** normalised Unicode codepoints *)
+  buf : int array;  (** normalized Unicode codepoints *)
   mutable idx : int;  (** current position in [buf] *)
   mutable line : int;  (** 1-based line number *)
   mutable column : int;  (** 0-based column (codepoints since last LF) *)
@@ -128,7 +128,7 @@ type t = {
 (** Create a Reader from a UTF-8 string. *)
 let of_string (s : string) : t =
   let raw = decode_utf8 s in
-  let buf = normalise raw in
+  let buf = normalize raw in
   { buf; idx = 0; line = 1; column = 0 }
 
 (** Total number of codepoints in the input. *)

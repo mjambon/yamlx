@@ -19,4 +19,4 @@ val attach : Types.node list -> (int * bool * string) list -> Types.node list
       sibling) → [foot_comments] of the collection.
 
     Comments that cannot be attributed to any node are silently discarded.
-    Behaviour is subject to change as the heuristics are refined. *)
+    Behavior is subject to change as the heuristics are refined. *)

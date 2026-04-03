@@ -22,7 +22,7 @@ val to_tree : Types.event list -> string
 (** Convert an event list to the multi-line tree string. Each event becomes one
     line; the result ends with a newline. *)
 
-val normalise_tree : string -> string list
+val normalize_tree : string -> string list
 (** Split a tree string into trimmed, non-empty lines for comparison. Strips the
     leading whitespace used for visual indentation in the test suite's reference
     files. *)

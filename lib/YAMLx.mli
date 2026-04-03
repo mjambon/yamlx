@@ -136,7 +136,7 @@ val parse_nodes : string -> node list
     malformed input. *)
 
 val to_yaml : node list -> string
-(** Serialise [docs] back into a YAML string. Scalar styles ([Plain],
+(** Serialize [docs] back into a YAML string. Scalar styles ([Plain],
     [Single_quoted], [Double_quoted], [Literal], [Folded]) and collection
     flow/block style are preserved. The output is valid YAML 1.2 that
     round-trips through {!parse_nodes} to equivalent nodes. *)

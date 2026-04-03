@@ -6,7 +6,7 @@
     stream ([tree:] field). 2. A [yaml:] input that should fail to parse
     ([fail: true]).
 
-    For case 1 we compare the normalised event tree produced by YAMLx against
+    For case 1 we compare the normalized event tree produced by YAMLx against
     the expected tree from the test file.
 
     For case 2 we check that YAMLx raises [Scan_error] or [Parse_error].

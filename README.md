@@ -15,12 +15,12 @@ A pure-OCaml YAML 1.2 library with a lossless, comment-preserving AST.
   before a node, inline (line) comments after a value, and trailing
   (foot) comments after the last item of a block collection are
   attached to the nearest node and re-emitted by the printer.
-- **Pretty-printer** — `to_yaml` serialises a node list back to a YAML
+- **Pretty-printer** — `to_yaml` serializes a node list back to a YAML
   string, preserving all of the above.
 - **Plain-YAML printer** — `to_plain_yaml` produces a restricted subset
   with no anchors, no aliases (expanded inline), no tags, no flow
   collections, and no complex mapping keys — the fragment of YAML that
-  most people recognise on sight.
+  most people recognize on sight.
 - **Typed-value resolver** — `of_string` applies the YAML 1.2 JSON
   schema and returns `value list` with `Null | Bool | Int | Float |
   String | Seq | Map` constructors.
@@ -85,7 +85,7 @@ header lines (`key: |  # this`) are not captured.
 Reader → Scanner → Parser → Composer → Resolver
 ```
 
-- **Reader** — UTF-8 / UTF-16 / UTF-32 input normalisation.
+- **Reader** — UTF-8 / UTF-16 / UTF-32 input normalization.
 - **Scanner** — tokenisation, indentation, flow-level tracking, comment
   capture.
 - **Parser** — token stream → event stream (YAML grammar).

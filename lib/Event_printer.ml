@@ -15,7 +15,7 @@
     backslash-n actual tab -> backslash-t actual backslash -> double-backslash
 
     The tree lines in the test suite have leading spaces for visual nesting; we
-    strip those when comparing (see [normalise_tree]). *)
+    strip those when comparing (see [normalize_tree]). *)
 
 open Types
 
@@ -118,7 +118,7 @@ let to_tree (events : event list) : string =
 (** Split [s] into trimmed, non-empty lines for comparison. Leading whitespace
     (the visual indentation in the test suite's tree format) is stripped since
     it carries no semantic meaning. *)
-let normalise_tree (s : string) : string list =
+let normalize_tree (s : string) : string list =
   String.split_on_char '\n' s
   |> List.map String.trim
   |> List.filter (fun l -> l <> "")
@@ -126,8 +126,8 @@ let normalise_tree (s : string) : string list =
 (** Return a human-readable diff between [expected] and [actual] tree strings.
     Only lists the first differing line. *)
 let diff_trees ~expected ~actual : string option =
-  let exp_lines = normalise_tree expected in
-  let act_lines = normalise_tree actual in
+  let exp_lines = normalize_tree expected in
+  let act_lines = normalize_tree actual in
   let rec go i = function
     | [], [] -> None
     | e :: es, a :: ax ->

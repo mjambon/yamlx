@@ -21,7 +21,7 @@
       [foot_comments] of the collection.
 
     Comments inside flow collections are not recorded by the Scanner. Comments
-    that cannot be attributed to any node are silently discarded. The behaviour
+    that cannot be attributed to any node are silently discarded. The behavior
     is subject to change as the heuristics are refined. *)
 
 open Types

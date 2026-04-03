@@ -1,6 +1,6 @@
 (** UTF-8 input reader for the YAML scanner. Decodes the input string into an
     array of Unicode codepoints (int values), skips an optional byte-order mark
-    (BOM, U+FEFF) at the start, and normalises all line endings to LF (U+000A):
+    (BOM, U+FEFF) at the start, and normalizes all line endings to LF (U+000A):
     * CR+LF (\r\n) → LF * CR (\r) → LF * NEL (\x85) → LF * LS (\u2028) → LF * PS
     (\u2029) → LF Tracks the current position (codepoint index, line, column)
     and exposes a small lookahead interface used by the Scanner. *)

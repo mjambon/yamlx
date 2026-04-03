@@ -2,7 +2,7 @@
     string, preserving scalar styles and collection flow/block style. *)
 
 val to_yaml : Types.node list -> string
-(** Serialise [docs] (one {!Types.node} per document) as a YAML string.
+(** Serialize [docs] (one {!Types.node} per document) as a YAML string.
 
     Scalar styles are preserved:
     - [Plain] scalars are written unquoted.
