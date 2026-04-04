@@ -15,51 +15,76 @@ A pure-OCaml YAML 1.2 library with a lossless, comment-preserving AST.
   before a node, inline (line) comments after a value, and trailing
   (foot) comments after the last item of a block collection are
   attached to the nearest node and re-emitted by the printer.
-- **Pretty-printer** — `to_yaml` serializes a node list back to a YAML
-  string, preserving all of the above.
-- **Plain-YAML printer** — `to_plain_yaml` produces a restricted subset
-  with no anchors, no aliases (expanded inline), no tags, no flow
-  collections, and no complex mapping keys — the fragment of YAML that
-  most people recognize on sight.
-- **Typed-value resolver** — `of_string` applies the YAML 1.2 JSON
+- **Pretty-printer** — `Nodes.to_yaml` serializes a node list back to a
+  YAML string, preserving all of the above.
+- **Plain-YAML printer** — `Nodes.to_plain_yaml_exn` produces a
+  restricted subset with no anchors, no aliases (expanded inline), no
+  tags, no flow collections, and no complex mapping keys — the fragment
+  of YAML that most people recognize on sight.
+- **Typed-value resolver** — `Values.of_yaml` applies the YAML 1.2 JSON
   schema and returns `value list` with `Null | Bool | Int | Float |
   String | Seq | Map` constructors.
-- **Multi-document streams** — both the AST and value APIs handle
-  streams containing more than one document.
+- **Multi-document streams** — both the node and value APIs handle
+  streams containing more than one `---`-separated document.
+- **Correct anchor scoping** — anchors are document-local; an alias in
+  document N cannot refer to an anchor defined in document N−1.
 - **Structured errors** — `Scan_error` and `Parse_error` carry a `pos`
-  record with line, column, and byte offset.
+  record with line, column, and byte offset. `catch_errors` wraps any
+  of these into a `(_, string) result` with a human-readable message,
+  optionally prefixed with a file name.
 - **Command-line tool** — the `yamlx` binary reads YAML from a file or
-  stdin and re-emits it in `yaml` (default), `plain`, or `events`
-  format.
+  stdin and prints it in one of several formats (see below).
 
 ## Quick start
 
 ```ocaml
-(* Resolve to typed values *)
-let values = YAMLx.of_string "answer: 42\nflag: true"
-(* → [Map [(String "answer", Int 42L); (String "flag", Bool true)]] *)
+(* Resolve to typed values — returns (value list, string) result *)
+match YAMLx.Values.of_yaml "answer: 42\nflag: true" with
+| Ok [ Map (_, [(_, String (_, "answer"), Int (_, 42L));
+               (_, String (_, "flag"),   Bool (_, true))]) ] -> ...
+| _ -> ...
 
-(* Non-raising variant *)
-match YAMLx.of_string_result input with
+(* Read from a file; errors include the file name *)
+match YAMLx.Values.of_yaml_file "config.yaml" with
 | Ok values -> ...
+| Error msg -> prerr_endline msg  (* "file config.yaml, line 3, col 5: ..." *)
+
+(* Expect exactly one document *)
+match YAMLx.Values.one_of_yaml input with
+| Ok value  -> ...
 | Error msg -> ...
 
 (* Round-trip through the lossless AST *)
-let yaml = YAMLx.to_yaml (YAMLx.parse_nodes input)
+match YAMLx.Nodes.of_yaml input with
+| Ok nodes -> print_string (YAMLx.Nodes.to_yaml nodes)
+| Error msg -> ...
 
 (* Strip YAML-specific features *)
-let plain = YAMLx.to_plain_yaml (YAMLx.parse_nodes input)
+match YAMLx.Nodes.of_yaml input with
+| Ok nodes ->
+    (match YAMLx.catch_errors (fun () ->
+         YAMLx.Nodes.to_plain_yaml_exn nodes) with
+    | Ok plain -> print_string plain
+    | Error msg -> ...)
+| Error msg -> ...
 ```
 
 ## Command-line tool
 
 ```
-yamlx [--format FORMAT] [FILE]
+yamlx [-f FORMAT] [FILE]
 
-  --format yaml    Re-emit YAML preserving styles and comments (default)
-  --format plain   Plain YAML: aliases expanded, tags stripped, block-only
-  --format events  yaml-test-suite event-tree notation (for debugging)
-  --strict         With --format plain: error on tags instead of stripping
+Output formats (-f FORMAT):
+  yaml        Re-emit YAML, preserving styles and comments (default)
+  plain       Plain YAML: aliases expanded, tags stripped, block-only
+  value       Typed-value tree: Null / Bool / Int / Float / String / Seq / Map
+  value-noloc Same as value but without source locations
+  node        Full AST: anchors, tags, styles, locations, comments
+  node-noloc  Same as node but without source locations and heights
+  events      yaml-test-suite event-tree notation (mainly for debugging)
+
+Options:
+  --strict    With -f plain: raise an error on tags instead of stripping them
 ```
 
 ## Comment preservation
