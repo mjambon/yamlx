@@ -128,7 +128,7 @@ let () =
         match
           YAMLx.Nodes.to_plain_yaml_exn ~strict:!strict (nodes_or_exit ())
         with
-        | exception YAMLx.Nodes.Plain_error msg ->
+        | exception YAMLx.Plain_error msg ->
             Printf.eprintf "Plain error: %s\n" msg;
             exit 1
         | s -> s)

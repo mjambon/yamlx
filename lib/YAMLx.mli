@@ -63,6 +63,18 @@ exception Depth_limit_exceeded of int
 (** Raised when the YAML nesting depth exceeds [~max_depth] during parsing. The
     payload is the limit that was exceeded. See {!default_max_depth}. *)
 
+exception Plain_error of string
+(** Raised by {!Nodes.to_plain_yaml_exn} when the input uses a feature that
+    plain YAML does not support: an explicit tag or a complex mapping key. *)
+
+val catch_errors : (unit -> 'a) -> ('a, string) result
+(** Catch the exceptions exposed by this module and turn them into nice error
+    messages. *)
+
+val register_exception_printers : unit -> unit
+(** Register nice exception printers for the exceptions exposed by this module.
+*)
+
 val default_expansion_limit : int
 (** Default node-visit budget for alias expansion (1,000,000). *)
 
@@ -173,6 +185,10 @@ module Nodes : sig
   type t = node list
   (** One {!node} per YAML document in the input stream. *)
 
+  val of_yaml : ?max_depth:int -> string -> (t, string) result
+  (** Like {!of_yaml_exn} but returns [Ok nodes] on success or [Error msg] on
+      any failure. Does not raise. *)
+
   val of_yaml_exn : ?max_depth:int -> string -> t
   (** Parse a YAML string and return one node per document. Use this when you
       need tags, anchors, scalar styles, source positions, or comments. For
@@ -186,10 +202,6 @@ module Nodes : sig
   (** Serialize nodes back to a YAML string. Scalar styles and flow/block mode
       are preserved. The output round-trips through {!of_yaml_exn} to equivalent
       nodes. Does not raise. *)
-
-  exception Plain_error of string
-  (** Raised by {!to_plain_yaml_exn} when the input uses a feature that plain
-      YAML does not support: an explicit tag or a complex mapping key. *)
 
   val to_plain_yaml_exn : ?strict:bool -> ?expansion_limit:int -> t -> string
   (** Like {!to_yaml} but produces a plain subset of YAML:
@@ -232,7 +244,7 @@ module Values : sig
       {!Expansion_limit_exceeded} when alias expansion exceeds [expansion_limit]
       (default: {!default_expansion_limit}). *)
 
-  val one_of_yaml :
+  val one_of_yaml_exn :
     ?max_depth:int -> ?expansion_limit:int -> string -> value option
   (** Parse a YAML string and return [Some v] for the first document, or [None]
       if the stream contains no documents.
