@@ -1,5 +1,12 @@
 # Dune, Testo workspaces
 _build/
 
-# Where I put reference material downloaded from the Web
+# Locally-installed dependencies
+_opam/
+
+# Claude local settings
+.claude/settings.local.json
+
+# Where I put reference material downloaded from the Web       
 reference/
+tmp/

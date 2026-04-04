@@ -1,0 +1,309 @@
+(** yamlx command-line tool. Reads YAML from a file (first positional argument)
+    or from standard input and prints the parsed result in the chosen format.
+
+    Usage: yamlx [--format FORMAT] [FILE]
+
+    Formats: yaml pretty-printed YAML via YAMLx.to_yaml (default) plain plain
+    YAML: aliases expanded, tags stripped, no flow collections events
+    yaml-test-suite event-tree notation
+
+    --strict (plain only): error on tags instead of stripping them *)
+
+(* ------------------------------------------------------------------ *)
+(* Output format                                                         *)
+(* ------------------------------------------------------------------ *)
+
+type format = Events | Yaml | Plain | Value | Node | Noloc | Value_noloc
+
+let format = ref Yaml
+let strict = ref false
+
+let set_format s =
+  match s with
+  | "events" -> format := Events
+  | "yaml" -> format := Yaml
+  | "plain" -> format := Plain
+  | "value" -> format := Value
+  | "node" -> format := Node
+  | "node-noloc" -> format := Noloc
+  | "value-noloc" -> format := Value_noloc
+  | other ->
+      raise
+        (Arg.Bad
+           (Printf.sprintf
+              "unknown format %S (choose: yaml, plain, events, value, \
+               value-noloc, node, node-noloc)"
+              other))
+
+let usage_msg =
+  {|Usage: yamlx [-f FORMAT] [FILE]
+
+  Parse YAML 1.2 from FILE (or stdin) and write the result to stdout.
+  Reads from standard input when no FILE is given.
+  Multi-document streams, anchors, tags, and Unicode are fully supported.
+
+  Output formats (-f FORMAT):
+    yaml    Pretty-printed YAML — scalar styles and block/flow mode preserved
+            (default)
+    plain   Simplified YAML — aliases expanded, tags stripped, flow collections
+            converted to block; raises an error on complex mapping keys
+    value   Typed-value tree: Null / Bool / Int / Float / String / Seq / Map
+            Useful for checking how scalars are resolved (e.g. is "1e2" a Float?)
+    value-noloc  Same as value but without source locations
+    node    Full AST with source locations, anchors, tags, scalar styles, and
+            best-effort comment preservation
+    node-noloc  Same as node but without source locations and heights
+    events  yaml-test-suite event-tree notation (mainly for parser testing)
+
+  Options:|}
+
+let spec =
+  [
+    ( "--format",
+      Arg.String set_format,
+      "FORMAT  Select output format (see above)" );
+    ("-f", Arg.String set_format, "FORMAT  Short alias for --format");
+    ( "--strict",
+      Arg.Set strict,
+      "  With -f plain: raise an error on tags instead of silently stripping \
+       them" );
+  ]
+
+(* ------------------------------------------------------------------ *)
+(* node-noloc type: node AST without source locations or heights         *)
+(* ------------------------------------------------------------------ *)
+
+type scalar_style = Plain | Single_quoted | Double_quoted | Literal | Folded
+[@@deriving show { with_path = false }]
+
+type noloc_node =
+  | Scalar of {
+      anchor : string option;
+      tag : string option;
+      value : string;
+      style : scalar_style;
+      head_comments : string list;
+      line_comment : string option;
+    }
+  | Sequence of {
+      anchor : string option;
+      tag : string option;
+      items : noloc_node list;
+      flow : bool;
+      head_comments : string list;
+      line_comment : string option;
+      foot_comments : string list;
+    }
+  | Mapping of {
+      anchor : string option;
+      tag : string option;
+      pairs : (noloc_node * noloc_node) list;
+      flow : bool;
+      head_comments : string list;
+      line_comment : string option;
+      foot_comments : string list;
+    }
+  | Alias of {
+      name : string;
+      resolved : noloc_node;
+      head_comments : string list;
+      line_comment : string option;
+    }
+[@@deriving show { with_path = false }]
+
+let noloc_style = function
+  | YAMLx.Plain -> Plain
+  | YAMLx.Single_quoted -> Single_quoted
+  | YAMLx.Double_quoted -> Double_quoted
+  | YAMLx.Literal -> Literal
+  | YAMLx.Folded -> Folded
+
+let rec noloc_node = function
+  | YAMLx.Scalar_node r ->
+      Scalar
+        {
+          anchor = r.anchor;
+          tag = r.tag;
+          value = r.value;
+          style = noloc_style r.style;
+          head_comments = r.head_comments;
+          line_comment = r.line_comment;
+        }
+  | YAMLx.Sequence_node r ->
+      Sequence
+        {
+          anchor = r.anchor;
+          tag = r.tag;
+          items = List.map noloc_node r.items;
+          flow = r.flow;
+          head_comments = r.head_comments;
+          line_comment = r.line_comment;
+          foot_comments = r.foot_comments;
+        }
+  | YAMLx.Mapping_node r ->
+      Mapping
+        {
+          anchor = r.anchor;
+          tag = r.tag;
+          pairs = List.map (fun (k, v) -> (noloc_node k, noloc_node v)) r.pairs;
+          flow = r.flow;
+          head_comments = r.head_comments;
+          line_comment = r.line_comment;
+          foot_comments = r.foot_comments;
+        }
+  | YAMLx.Alias_node r ->
+      Alias
+        {
+          name = r.name;
+          resolved = noloc_node r.resolved;
+          head_comments = r.head_comments;
+          line_comment = r.line_comment;
+        }
+
+(* ------------------------------------------------------------------ *)
+(* value-noloc type: value tree without source locations                 *)
+(* ------------------------------------------------------------------ *)
+
+type noloc_value =
+  | Null
+  | Bool of bool
+  | Int of int64
+  | Float of float
+  | String of string
+  | Seq of noloc_value list
+  | Map of (noloc_value * noloc_value) list
+[@@deriving show { with_path = false }]
+
+let rec noloc_value = function
+  | YAMLx.Null _ -> Null
+  | YAMLx.Bool (_, b) -> Bool b
+  | YAMLx.Int (_, i) -> Int i
+  | YAMLx.Float (_, f) -> Float f
+  | YAMLx.String (_, s) -> String s
+  | YAMLx.Seq (_, vs) -> Seq (List.map noloc_value vs)
+  | YAMLx.Map (_, pairs) ->
+      Map (List.map (fun (_, k, v) -> (noloc_value k, noloc_value v)) pairs)
+
+(* ------------------------------------------------------------------ *)
+(* Input reading                                                         *)
+(* ------------------------------------------------------------------ *)
+
+let read_stdin () =
+  let buf = Buffer.create 1024 in
+  (try
+     while true do
+       Buffer.add_channel buf stdin 4096
+     done
+   with
+  | End_of_file -> ());
+  Buffer.contents buf
+
+(* Needed only for the Events format, which requires a raw string as input
+   to the internal parse_events function. All other formats use the
+   YAMLx result-returning functions that handle file I/O themselves. *)
+let read_file path =
+  let ic = open_in path in
+  Fun.protect
+    ~finally:(fun () -> close_in ic)
+    (fun () ->
+      let n = in_channel_length ic in
+      let s = Bytes.create n in
+      really_input ic s 0 n;
+      Bytes.to_string s)
+
+(* ------------------------------------------------------------------ *)
+(* Entry point                                                           *)
+(* ------------------------------------------------------------------ *)
+
+let or_die = function
+  | Ok x -> x
+  | Error msg ->
+      Printf.eprintf "%s\n" msg;
+      exit 1
+
+let () =
+  let files = ref [] in
+  Arg.parse spec (fun s -> files := s :: !files) usage_msg;
+  let source =
+    match List.rev !files with
+    | [] -> `Stdin
+    | path :: _ -> `File path
+  in
+  let file =
+    match source with
+    | `File p -> Some p
+    | `Stdin -> None
+  in
+  let get_nodes () =
+    match source with
+    | `Stdin -> YAMLx.Nodes.of_yaml (read_stdin ())
+    | `File path -> YAMLx.Nodes.of_yaml_file path
+  in
+  let output =
+    match !format with
+    | Events ->
+        let input =
+          match source with
+          | `Stdin -> read_stdin ()
+          | `File path ->
+              YAMLx.catch_errors ~file:path (fun () -> read_file path) |> or_die
+        in
+        YAMLx.catch_errors ?file (fun () ->
+            YAMLx.events_to_tree (YAMLx.parse_events input))
+        |> or_die
+    | Yaml -> get_nodes () |> Result.map YAMLx.Nodes.to_yaml |> or_die
+    | Plain ->
+        let nodes = get_nodes () |> or_die in
+        YAMLx.catch_errors ?file (fun () ->
+            YAMLx.Nodes.to_plain_yaml_exn ~strict:!strict nodes)
+        |> or_die
+    | Value ->
+        (match source with
+          | `Stdin -> YAMLx.Values.of_yaml (read_stdin ())
+          | `File path -> YAMLx.Values.of_yaml_file path)
+        |> Result.map (fun values ->
+            let buf = Buffer.create 256 in
+            List.iter
+              (fun v ->
+                Buffer.add_string buf (YAMLx.show_value v);
+                Buffer.add_char buf '\n')
+              values;
+            Buffer.contents buf)
+        |> or_die
+    | Node ->
+        get_nodes ()
+        |> Result.map (fun nodes ->
+            let buf = Buffer.create 256 in
+            List.iter
+              (fun n ->
+                Buffer.add_string buf (YAMLx.show_node n);
+                Buffer.add_char buf '\n')
+              nodes;
+            Buffer.contents buf)
+        |> or_die
+    | Noloc ->
+        get_nodes ()
+        |> Result.map (fun nodes ->
+            let buf = Buffer.create 256 in
+            List.iter
+              (fun n ->
+                Buffer.add_string buf (show_noloc_node (noloc_node n));
+                Buffer.add_char buf '\n')
+              nodes;
+            Buffer.contents buf)
+        |> or_die
+    | Value_noloc ->
+        (match source with
+          | `Stdin -> YAMLx.Values.of_yaml (read_stdin ())
+          | `File path -> YAMLx.Values.of_yaml_file path)
+        |> Result.map (fun values ->
+            let buf = Buffer.create 256 in
+            List.iter
+              (fun v ->
+                Buffer.add_string buf (show_noloc_value (noloc_value v));
+                Buffer.add_char buf '\n')
+              values;
+            Buffer.contents buf)
+        |> or_die
+  in
+  print_string output

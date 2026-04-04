@@ -1,0 +1,199 @@
+(** Core types shared by all YAMLx modules. This module defines the data
+    structures that flow through the parsing pipeline: positions and errors,
+    then tokens (Scanner → Parser), events (Parser → Composer), and AST nodes
+    (Composer → user).
+
+    Pipeline overview: string/channel └─▶ Reader (UTF-8 decoding, line tracking)
+    └─▶ Scanner (tokenization) → token list └─▶ Parser (grammar) → event list
+    └─▶ Composer (node building) → node list └─▶ Resolver (type resolution) →
+    value list *)
+
+(** {1 Source positions} *)
+
+type pos = {
+  line : int;
+  column : int;  (** 0-based Unicode codepoint column *)
+  column_bytes : int;  (** 0-based UTF-8 byte column *)
+  offset : int;  (** codepoint index from the start of the input *)
+  offset_bytes : int;  (** UTF-8 byte offset from the start of the input *)
+}
+(** A location in the source input. [line] is 1-based; [column] and
+    [column_bytes] are 0-based distances from the start of the current line,
+    measured in Unicode codepoints and UTF-8 bytes respectively. [offset] and
+    [offset_bytes] are absolute distances from the start of the input, measured
+    the same way. *)
+
+val pos_zero : pos
+
+type loc = { start_pos : pos; end_pos : pos }
+(** A source range: [start_pos] is the first character of the node; [end_pos] is
+    the position immediately after the last character. *)
+
+(** {1 Errors} *)
+
+type yaml_error = { msg : string; pos : pos }
+
+exception Scan_error of yaml_error
+exception Parse_error of yaml_error
+
+exception Expansion_limit_exceeded of int
+(** Raised when alias expansion visits more than the configured number of nodes.
+    The payload is the limit that was exceeded. *)
+
+exception Depth_limit_exceeded of int
+(** Raised when the YAML nesting depth during composition exceeds the configured
+    maximum. The payload is the limit that was exceeded. *)
+
+val default_expansion_limit : int
+(** Default node-visit budget for alias expansion (1,000,000). *)
+
+val default_max_depth : int
+(** Default maximum nesting depth (512). *)
+
+val scan_error : pos -> ('a, unit, string, 'b) format4 -> 'a
+val parse_error : pos -> ('a, unit, string, 'b) format4 -> 'a
+
+(** {1 Scalar styles} *)
+
+(** How a scalar was written in the YAML source. The style is preserved through
+    the parsing pipeline because it affects tag resolution and round-trip
+    fidelity. *)
+type scalar_style =
+  | Plain  (** unquoted, e.g. [foo] *)
+  | Single_quoted  (** e.g. ['foo'] *)
+  | Double_quoted  (** e.g. ["foo"] *)
+  | Literal  (** block scalar [|]: newlines preserved *)
+  | Folded  (** block scalar [>]: newlines folded to spaces *)
+
+(** {1 Tokens — Scanner output} *)
+
+(** A token represents one lexical element. The YAML grammar requires the
+    scanner to emit synthetic structural tokens (BLOCK_SEQUENCE_START,
+    BLOCK_MAPPING_START, BLOCK_END) in addition to the characters that appear in
+    the source. *)
+type token_kind =
+  | Stream_start
+  | Stream_end
+  | Directive of string * string
+      (** [Directive (name, value)]: e.g. [%YAML 1.2] or [%TAG ! !foo/] *)
+  | Document_start  (** [---] *)
+  | Document_end  (** [...] *)
+  | Block_sequence_start
+      (** Synthetic: emitted when a block sequence begins (indentation increases
+          to a new level). *)
+  | Block_mapping_start  (** Synthetic: emitted when a block mapping begins. *)
+  | Block_end
+      (** Synthetic: emitted when indentation decreases, closing one or more
+          block collections. *)
+  | Flow_sequence_start  (** [ *)
+  | Flow_sequence_end  (** ] *)
+  | Flow_mapping_start  (** { *)
+  | Flow_mapping_end  (** } *)
+  | Block_entry  (** [-] followed by whitespace or newline *)
+  | Flow_entry  (** [,] *)
+  | Key  (** [?] (explicit) or synthetic (implicit key) *)
+  | Value  (** [:] followed by whitespace or end-of-line *)
+  | Alias of string  (** [*name] *)
+  | Anchor of string  (** [&name] *)
+  | Tag of string * string  (** (handle, suffix) *)
+  | Scalar of string * scalar_style
+
+type token = { tok_kind : token_kind; tok_start_pos : pos; tok_end_pos : pos }
+
+(** {1 Events — Parser output} *)
+
+(** Events are the output of the Parser. They form a flat, sequential stream
+    that can be processed without building a full tree in memory. The format
+    mirrors the yaml-test-suite event notation. *)
+type event_kind =
+  | Stream_start
+  | Stream_end
+  | Document_start of {
+      explicit : bool;
+      version : (int * int) option;
+      tag_directives : (string * string) list;
+    }
+  | Document_end of { explicit : bool }
+  | Mapping_start of {
+      anchor : string option;
+      tag : string option;
+      implicit : bool;
+      flow : bool;
+    }
+  | Mapping_end
+  | Sequence_start of {
+      anchor : string option;
+      tag : string option;
+      implicit : bool;
+      flow : bool;
+    }
+  | Sequence_end
+  | Scalar of {
+      anchor : string option;
+      tag : string option;
+      value : string;
+      style : scalar_style;
+    }
+  | Alias of string
+
+type event = { kind : event_kind; start_pos : pos; end_pos : pos }
+
+(** {1 AST nodes — Composer output} *)
+
+(** Nodes are the in-memory representation of a parsed YAML document. Anchors
+    are resolved at compose time so [Alias_node] carries the actual target node.
+*)
+type node =
+  | Scalar_node of {
+      anchor : string option;
+      tag : string option;
+      value : string;
+      style : scalar_style;
+      loc : loc;
+      height : int;
+      head_comments : string list;
+      line_comment : string option;
+    }
+  | Sequence_node of {
+      anchor : string option;
+      tag : string option;
+      items : node list;
+      flow : bool;
+      loc : loc;
+      height : int;
+      head_comments : string list;
+      line_comment : string option;
+      foot_comments : string list;
+    }
+  | Mapping_node of {
+      anchor : string option;
+      tag : string option;
+      pairs : (node * node) list;
+      flow : bool;
+      loc : loc;
+      height : int;
+      head_comments : string list;
+      line_comment : string option;
+      foot_comments : string list;
+    }
+  | Alias_node of {
+      name : string;
+      resolved : node;
+      loc : loc;
+      height : int;
+      head_comments : string list;
+      line_comment : string option;
+    }
+
+(** {1 Resolved values — Resolver output} *)
+
+(** Typed values produced by applying the YAML 1.2 JSON schema to a composed
+    node tree. *)
+type value =
+  | Null of loc
+  | Bool of loc * bool
+  | Int of loc * int64
+  | Float of loc * float
+  | String of loc * string
+  | Seq of loc * value list
+  | Map of loc * (loc * value * value) list
