@@ -27,11 +27,11 @@ val peek_kind : state -> Types.token_kind option
 (** Return the constructor of the next token's kind, or [None] at end of input.
 *)
 
-val drain_comments : state -> (int * bool * string) list
+val drain_comments : state -> (int * int * bool * string) list
 (** Return all accumulated comments in source order as
-    [(line, is_line_comment, text)] triples. [is_line_comment = true] means the
-    comment appeared on the same line as the preceding token (trailing comment);
-    [false] means it was on its own line (head/standalone comment). Text does
-    not include the leading ['#'] character. Comments inside flow collections
-    are not recorded. Typically called after the full token stream has been
-    consumed. *)
+    [(line, col, is_line_comment, text)] tuples. [col] is the 0-based column of
+    the ['#']. [is_line_comment = true] means the comment appeared on the same
+    line as the preceding token (trailing comment); [false] means it was on its
+    own line (head/standalone comment). Text does not include the leading ['#']
+    character. Comments inside flow collections are not recorded. Typically
+    called after the full token stream has been consumed. *)

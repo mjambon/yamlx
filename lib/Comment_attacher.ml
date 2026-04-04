@@ -30,11 +30,12 @@ open Types
 (* Comment cursor                                                        *)
 (* ------------------------------------------------------------------ *)
 
-type cursor = (int * bool * string) list ref
-(** A mutable cursor through the sorted comment list. *)
+type cursor = (int * int * bool * string) list ref
+(** A mutable cursor through the sorted comment list. Each entry is
+    [(line, col, is_line_comment, text)]. *)
 
 let make_cursor comments =
-  ref (List.sort (fun (a, _, _) (b, _, _) -> compare a b) comments)
+  ref (List.sort (fun (a, _, _, _) (b, _, _, _) -> compare a b) comments)
 
 (** Take elements from the front of [xs] as long as they satisfy [p]. Returns
     the matching prefix (in order) and the remaining suffix. *)
@@ -44,19 +45,23 @@ let rec take_while p acc xs =
   | x :: tail -> if p x then take_while p (x :: acc) tail else (List.rev acc, xs)
 
 (** Consume and return the texts of non-line-comment entries at lines strictly
-    before [line]. *)
-let take_head_before line cur =
+    before [line]. When [~min_col] is given (default 0), only entries whose
+    column is >= [min_col] are taken; entries with a smaller column are left in
+    the cursor for an outer scope to claim as head comments. *)
+let take_head_before ?(min_col = 0) line cur =
   let taken, rest =
-    take_while (fun (l, is_line, _) -> (not is_line) && l < line) [] !cur
+    take_while
+      (fun (l, col, is_line, _) -> (not is_line) && l < line && col >= min_col)
+      [] !cur
   in
   cur := rest;
-  List_ext.map (fun (_, _, t) -> t) taken
+  List_ext.map (fun (_, _, _, t) -> t) taken
 
 (** Consume and return the text of a line-comment entry exactly at [line], if
     present. *)
 let take_line_comment line (cur : cursor) =
   match !cur with
-  | (l, true, t) :: rest when l = line ->
+  | (l, _, true, t) :: rest when l = line ->
       cur := rest;
       Some t
   | _ -> None
@@ -129,7 +134,9 @@ let rec attach_node cur ~next_line node =
         if r.flow || r.items = [] then take_line_comment nl cur else None
       in
       let items = attach_siblings cur r.items ~parent_next_line:next_line in
-      let feet = take_head_before next_line cur in
+      let feet =
+        take_head_before next_line ~min_col:r.loc.start_pos.column cur
+      in
       Sequence_node
         {
           r with
@@ -144,7 +151,9 @@ let rec attach_node cur ~next_line node =
         if r.flow || r.pairs = [] then take_line_comment nl cur else None
       in
       let pairs = attach_pairs cur r.pairs ~parent_next_line:next_line in
-      let feet = take_head_before next_line cur in
+      let feet =
+        take_head_before next_line ~min_col:r.loc.start_pos.column cur
+      in
       Mapping_node
         {
           r with
@@ -208,8 +217,8 @@ and attach_pairs cur pairs ~parent_next_line =
     [raw_comments] is the [(line, is_line_comment, text)] list returned by
     {!Scanner.drain_comments}. Documents are treated as top-level siblings; any
     comments after the last document are discarded. *)
-let attach (docs : node list) (raw_comments : (int * bool * string) list) :
-    node list =
+let attach (docs : node list) (raw_comments : (int * int * bool * string) list)
+    : node list =
   if raw_comments = [] then docs
   else begin
     let cur = make_cursor raw_comments in

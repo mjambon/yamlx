@@ -59,14 +59,15 @@ type state = {
   mutable done_ : bool;
   mutable stream_start_produced : bool;
   (* Comment side-channel (block context only) *)
-  comments : (int * bool * string) Queue.t;
-      (** [(source_line, is_line_comment, text)] triples collected while
-          scanning. [is_line_comment = true] means the ['#'] was preceded only
-          by spaces on the same line (trailing/line comment); [false] means a
-          newline was consumed before the ['#'] (standalone head comment). Text
-          does not include the leading ['#'] character or the optional space
-          that follows it. Comments inside flow collections ([flow_level > 0])
-          are discarded. *)
+  comments : (int * int * bool * string) Queue.t;
+      (** [(source_line, source_col, is_line_comment, text)] tuples collected
+          while scanning. [source_col] is the 0-based column of the ['#'].
+          [is_line_comment = true] means the ['#'] was preceded only by spaces
+          on the same line (trailing/line comment); [false] means a newline was
+          consumed before the ['#'] (standalone head comment). Text does not
+          include the leading ['#'] character or the optional space that follows
+          it. Comments inside flow collections ([flow_level > 0]) are discarded.
+      *)
 }
 
 and simple_key = {
@@ -331,6 +332,7 @@ let scan_to_next_token scn =
       begin if scn.flow_level = 0 then begin
         (* Block context: capture the comment text. *)
         let comment_line = (pos scn).line in
+        let comment_col = (pos scn).column in
         let is_line_comment = not !had_newline in
         advance scn 1;
         (* consume '#' *)
@@ -348,7 +350,7 @@ let scan_to_next_token scn =
           end
         done;
         Queue.add
-          (comment_line, is_line_comment, Buffer.contents buf)
+          (comment_line, comment_col, is_line_comment, Buffer.contents buf)
           scn.comments
       end
       else begin
@@ -1769,9 +1771,9 @@ let create (reader : Reader.t) : state =
   }
 
 (** Return all accumulated comments in source order as
-    [(line, is_line_comment, text)] triples. Typically called after the full
+    [(line, col, is_line_comment, text)] tuples. Typically called after the full
     token stream has been consumed. *)
-let drain_comments (scn : state) : (int * bool * string) list =
+let drain_comments (scn : state) : (int * int * bool * string) list =
   Queue.fold (fun acc x -> x :: acc) [] scn.comments |> List.rev
 
 (** Ensure at least one token is available, fetching more if necessary. *)

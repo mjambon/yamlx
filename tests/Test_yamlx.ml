@@ -299,6 +299,14 @@ let comment_tests () =
       (check "parent:\n  # about child\n  child: x\n"
          "parent:\n  # about child\n  child: x\n");
     Testo.create ~category:[ "comments" ]
+      "comment between sequence items becomes head of next item, not foot of \
+       previous"
+      (* A standalone comment at column 0 between two top-level sequence items
+         must attach as a head comment of the following item, not as a foot
+         comment of the preceding nested collection. *)
+      (check "- a:\n    - b\n\n# something about c\n- c\n"
+         "- a:\n    - b\n# something about c\n- c\n");
+    Testo.create ~category:[ "comments" ]
       "comments dropped inside flow collection"
       (* Flow-context comments are discarded by the scanner; the output should
          contain no comment lines at all. *)

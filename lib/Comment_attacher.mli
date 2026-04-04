@@ -3,10 +3,11 @@
     Attaches the raw comments collected by the Scanner to the appropriate nodes
     in the parsed AST. See {!attach} for details. *)
 
-val attach : Types.node list -> (int * bool * string) list -> Types.node list
+val attach :
+  Types.node list -> (int * int * bool * string) list -> Types.node list
 (** Attach [raw_comments] to [docs] and return the annotated node list.
 
-    [raw_comments] is the [(line, is_line_comment, text)] list returned by
+    [raw_comments] is the [(line, col, is_line_comment, text)] list returned by
     {!Scanner.drain_comments} after the full stream has been consumed. Documents
     are treated as top-level siblings.
 
