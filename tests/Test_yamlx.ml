@@ -508,6 +508,30 @@ let suite_tests () =
   end
 
 (* ------------------------------------------------------------------ *)
+(* Anchor scoping tests                                                  *)
+(* ------------------------------------------------------------------ *)
+
+let anchor_tests () =
+  [
+    Testo.create ~category:[ "anchors" ]
+      "anchor defined in one document is not visible in the next"
+      (* Per the YAML 1.2 spec, anchors are document-local: an alias in
+         document N must not resolve to an anchor defined in document N-1. *)
+      (fun () ->
+        match YAMLx.Nodes.of_yaml "---\na: &A 1\n---\nb: *A\n" with
+        | Error _ -> () (* expected: undefined alias *)
+        | Ok _ -> failwith "expected an error for cross-document alias *A");
+    Testo.create ~category:[ "anchors" ]
+      "same anchor name may be reused across documents"
+      (* Each document starts with a clean anchor table, so reusing &A in
+         a later document is valid and independent of the earlier one. *)
+      (fun () ->
+        match YAMLx.Nodes.of_yaml "---\na: &A 1\n---\nb: &A 2\nc: *A\n" with
+        | Error msg -> failwith ("unexpected error: " ^ msg)
+        | Ok _ -> ());
+  ]
+
+(* ------------------------------------------------------------------ *)
 (* Pretty-printer output tests                                           *)
 (* ------------------------------------------------------------------ *)
 
@@ -584,5 +608,5 @@ let printer_tests () =
 let () =
   Testo.interpret_argv ~project_name:"yamlx" (fun _tags ->
       unit_tests () @ encoding_tests () @ roundtrip_tests () @ comment_tests ()
-      @ printer_tests () @ expansion_limit_tests () @ depth_limit_tests ()
-      @ performance_tests () @ suite_tests ())
+      @ anchor_tests () @ printer_tests () @ expansion_limit_tests ()
+      @ depth_limit_tests () @ performance_tests () @ suite_tests ())

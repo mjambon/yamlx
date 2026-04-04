@@ -159,6 +159,8 @@ let rec compose_node (c : t) ~(depth : int) : node =
 
 (** Compose a complete YAML document. Expects: DOCUMENT_START … DOCUMENT_END. *)
 let compose_document (c : t) : node =
+  (* Anchors are document-local: clear any anchors from previous documents. *)
+  Hashtbl.clear c.anchors;
   (* Consume DOCUMENT_START *)
   let start_ev = get_ev c in
   (match start_ev.kind with
