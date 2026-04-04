@@ -263,7 +263,9 @@ module Values = struct
   let one_of_yaml_exn ?max_depth ?expansion_limit input =
     match of_yaml_exn ?max_depth ?expansion_limit input with
     | [] -> None
-    | v :: _ -> Some v
+    | [ v ] -> Some v
+    | _ :: _ :: _ ->
+        invalid_arg "YAMLx.Values.one_of_yaml_exn: multiple documents in input"
 
   let equal = equal_value
   let height = value_height
