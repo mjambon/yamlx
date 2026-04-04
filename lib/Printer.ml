@@ -254,44 +254,79 @@ let rec block_value ~level node =
         (true, Buffer.contents b)
       end
 
+(** Render a mapping key as an inline string. Block scalar styles fall back to
+    double-quoted (block styles cannot appear in key position). Complex keys are
+    serialized in flow style. *)
+and render_key = function
+  | Scalar_node { anchor; tag; value = v; style; _ } -> (
+      pp_anchor anchor ^ pp_tag tag
+      ^
+      match style with
+      | Plain -> v
+      | Single_quoted -> single_quoted_body v
+      | Double_quoted -> double_quoted_body v
+      | Literal
+      | Folded ->
+          double_quoted_body v)
+  | Alias_node { name; _ } -> "*" ^ name
+  | node -> flow node
+
 (** Emit one block sequence item at indentation [level]. The returned string
     includes the item's indentation, the ["-"] or ["- "] prefix, the value, and
-    a trailing ['\n']. *)
+    a trailing ['\n'].
+
+    Block mappings without an anchor or tag use compact notation: the first
+    key-value pair is placed on the same line as the ["-"]. *)
 and seq_item ~level item =
   let ind = indent level in
   let heads = emit_heads ~level (node_head_comments item) in
-  if is_block_collection item then begin
-    (* Nested block collection: write "-\n" then items one level deeper *)
-    let _, content = block_value ~level:(level + 1) item in
-    heads ^ ind ^ "-\n" ^ content
-  end
-  else begin
-    let _, content = block_value ~level:(level + 1) item in
-    heads ^ ind ^ "- " ^ content
-  end
+  match item with
+  | Mapping_node
+      {
+        anchor = None;
+        tag = None;
+        pairs = (first_k, first_v) :: rest_pairs;
+        flow = false;
+        foot_comments;
+        _;
+      }
+    when node_head_comments first_k = [] ->
+      (* Compact block mapping: first key inline with "- " *)
+      let b = Buffer.create 64 in
+      Buffer.add_string b heads;
+      let key_str = render_key first_k in
+      (* The first key is at effective level+1 (after "- "), so its value
+         must be at level+2, the same depth map_pair ~level:(level+1) would use. *)
+      let nl, val_str = block_value ~level:(level + 2) first_v in
+      if nl then begin
+        let val_heads =
+          emit_heads ~level:(level + 2) (node_head_comments first_v)
+        in
+        Buffer.add_string b (ind ^ "- " ^ key_str ^ ":\n" ^ val_heads ^ val_str)
+      end
+      else Buffer.add_string b (ind ^ "- " ^ key_str ^ ": " ^ val_str);
+      List.iter
+        (fun (k, v) -> Buffer.add_string b (map_pair ~level:(level + 1) k v))
+        rest_pairs;
+      List.iter
+        (fun fc -> Buffer.add_string b (indent (level + 1) ^ "# " ^ fc ^ "\n"))
+        foot_comments;
+      Buffer.contents b
+  | _ ->
+      if is_block_collection item then begin
+        let _, content = block_value ~level:(level + 1) item in
+        heads ^ ind ^ "-\n" ^ content
+      end
+      else begin
+        let _, content = block_value ~level:(level + 1) item in
+        heads ^ ind ^ "- " ^ content
+      end
 
 (** Emit one block mapping pair at indentation [level]. *)
 and map_pair ~level key value =
   let ind = indent level in
   let key_heads = emit_heads ~level (node_head_comments key) in
-  (* Mapping keys are always written in inline form; block styles fall
-     back to double-quoted since they cannot span multiple lines in a key
-     position.  Complex (non-scalar) keys are serialized as flow nodes. *)
-  let key_str =
-    match key with
-    | Scalar_node { anchor; tag; value = v; style; _ } -> (
-        pp_anchor anchor ^ pp_tag tag
-        ^
-        match style with
-        | Plain -> v
-        | Single_quoted -> single_quoted_body v
-        | Double_quoted -> double_quoted_body v
-        | Literal
-        | Folded ->
-            double_quoted_body v)
-    | Alias_node { name; _ } -> "*" ^ name
-    | _ -> flow key (* complex key as flow node *)
-  in
+  let key_str = render_key key in
   let nl, val_str = block_value ~level:(level + 1) value in
   if nl then begin
     (* Non-empty block collection value: key on its own line.
