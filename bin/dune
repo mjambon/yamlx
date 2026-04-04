@@ -5,4 +5,6 @@
 (executable
  (public_name yamlx)
  (name Main)
- (libraries yamlx))
+ (libraries yamlx)
+ (preprocess
+  (pps ppx_deriving.show)))

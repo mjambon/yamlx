@@ -13,7 +13,7 @@
 (* Output format                                                         *)
 (* ------------------------------------------------------------------ *)
 
-type format = Events | Yaml | Plain | Value | Node
+type format = Events | Yaml | Plain | Value | Node | Noloc
 
 let format = ref Yaml
 let strict = ref false
@@ -25,11 +25,13 @@ let set_format s =
   | "plain" -> format := Plain
   | "value" -> format := Value
   | "node" -> format := Node
+  | "node-noloc" -> format := Noloc
   | other ->
       raise
         (Arg.Bad
            (Printf.sprintf
-              "unknown format %S (choose: yaml, plain, events, value, node)"
+              "unknown format %S (choose: yaml, plain, events, value, node, \
+               node-noloc)"
               other))
 
 let usage_msg =
@@ -48,6 +50,7 @@ let usage_msg =
             Useful for checking how scalars are resolved (e.g. is "1e2" a Float?)
     node    Full AST with source locations, anchors, tags, scalar styles, and
             best-effort comment preservation
+    node-noloc  Same as node but without source locations and heights
     events  yaml-test-suite event-tree notation (mainly for parser testing)
 
   Options:|}
@@ -63,6 +66,97 @@ let spec =
       "  With -f plain: raise an error on tags instead of silently stripping \
        them" );
   ]
+
+(* ------------------------------------------------------------------ *)
+(* node-noloc type: node AST without source locations or heights         *)
+(* ------------------------------------------------------------------ *)
+
+type scalar_style = Plain | Single_quoted | Double_quoted | Literal | Folded
+[@@deriving show { with_path = false }]
+
+type noloc_node =
+  | Scalar of {
+      anchor : string option;
+      tag : string option;
+      value : string;
+      style : scalar_style;
+      head_comments : string list;
+      line_comment : string option;
+    }
+  | Sequence of {
+      anchor : string option;
+      tag : string option;
+      items : noloc_node list;
+      flow : bool;
+      head_comments : string list;
+      line_comment : string option;
+      foot_comments : string list;
+    }
+  | Mapping of {
+      anchor : string option;
+      tag : string option;
+      pairs : (noloc_node * noloc_node) list;
+      flow : bool;
+      head_comments : string list;
+      line_comment : string option;
+      foot_comments : string list;
+    }
+  | Alias of {
+      name : string;
+      resolved : noloc_node;
+      head_comments : string list;
+      line_comment : string option;
+    }
+[@@deriving show { with_path = false }]
+
+let noloc_style = function
+  | YAMLx.Plain -> Plain
+  | YAMLx.Single_quoted -> Single_quoted
+  | YAMLx.Double_quoted -> Double_quoted
+  | YAMLx.Literal -> Literal
+  | YAMLx.Folded -> Folded
+
+let rec noloc_node = function
+  | YAMLx.Scalar_node r ->
+      Scalar
+        {
+          anchor = r.anchor;
+          tag = r.tag;
+          value = r.value;
+          style = noloc_style r.style;
+          head_comments = r.head_comments;
+          line_comment = r.line_comment;
+        }
+  | YAMLx.Sequence_node r ->
+      Sequence
+        {
+          anchor = r.anchor;
+          tag = r.tag;
+          items = List.map noloc_node r.items;
+          flow = r.flow;
+          head_comments = r.head_comments;
+          line_comment = r.line_comment;
+          foot_comments = r.foot_comments;
+        }
+  | YAMLx.Mapping_node r ->
+      Mapping
+        {
+          anchor = r.anchor;
+          tag = r.tag;
+          pairs = List.map (fun (k, v) -> (noloc_node k, noloc_node v)) r.pairs;
+          flow = r.flow;
+          head_comments = r.head_comments;
+          line_comment = r.line_comment;
+          foot_comments = r.foot_comments;
+        }
+  | YAMLx.Alias_node r ->
+      Alias
+        {
+          name = r.name;
+          resolved = noloc_node r.resolved;
+          head_comments = r.head_comments;
+          line_comment = r.line_comment;
+        }
 
 (* ------------------------------------------------------------------ *)
 (* Input reading                                                         *)
@@ -157,6 +251,17 @@ let () =
             List.iter
               (fun n ->
                 Buffer.add_string buf (YAMLx.show_node n);
+                Buffer.add_char buf '\n')
+              nodes;
+            Buffer.contents buf)
+        |> or_die
+    | Noloc ->
+        get_nodes ()
+        |> Result.map (fun nodes ->
+            let buf = Buffer.create 256 in
+            List.iter
+              (fun n ->
+                Buffer.add_string buf (show_noloc_node (noloc_node n));
                 Buffer.add_char buf '\n')
               nodes;
             Buffer.contents buf)
