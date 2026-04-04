@@ -186,6 +186,13 @@ type value =
 
 (** {1 Node operations} *)
 
+(**/**)
+
+val node_height : node -> int
+(** Precomputed subtree height (O(1)). Internal — subject to change. *)
+
+(**/**)
+
 module Nodes : sig
   type t = node list
   (** One {!node} per YAML document in the input stream. *)
@@ -219,16 +226,21 @@ module Nodes : sig
       Raises {!Plain_error} on unsupported features (see above). Raises
       {!Expansion_limit_exceeded} when alias expansion exceeds [expansion_limit]
       (default: {!default_expansion_limit}). *)
-
-  (**/**)
-
-  val height : node -> int
-  (** Precomputed subtree height (O(1)). Internal — subject to change. *)
-
-  (**/**)
 end
 
 (** {1 Value operations} *)
+
+val equal_value : value -> value -> bool
+(** Structural equality that ignores source locations. Two values are equal when
+    they represent the same YAML data regardless of where they appear in the
+    source. *)
+
+(**/**)
+
+val value_height : value -> int
+(** Compute subtree height (O(n)). Internal — subject to change. *)
+
+(**/**)
 
 module Values : sig
   type t = value list
@@ -249,6 +261,11 @@ module Values : sig
       {!Expansion_limit_exceeded} when alias expansion exceeds [expansion_limit]
       (default: {!default_expansion_limit}). *)
 
+  val one_of_yaml :
+    ?max_depth:int -> ?expansion_limit:int -> string -> (value, string) result
+  (** Like {!one_of_yaml_exn} but returns [Ok v] on success or [Error msg] on
+      any failure, including wrong document count. Does not raise. *)
+
   val one_of_yaml_exn :
     ?max_depth:int -> ?expansion_limit:int -> string -> value
   (** Parse a YAML string expecting exactly one document and return its value.
@@ -258,23 +275,6 @@ module Values : sig
       Raises {!Scan_error}, {!Parse_error}, {!Depth_limit_exceeded}, or
       {!Expansion_limit_exceeded} on errors (same conditions as {!of_yaml_exn}).
   *)
-
-  val one_of_yaml :
-    ?max_depth:int -> ?expansion_limit:int -> string -> (value, string) result
-  (** Like {!one_of_yaml_exn} but returns [Ok v] on success or [Error msg] on
-      any failure, including wrong document count. Does not raise. *)
-
-  val equal : value -> value -> bool
-  (** Structural equality that ignores source locations. Two values are equal
-      when they represent the same YAML data regardless of where they appear in
-      the source. *)
-
-  (**/**)
-
-  val height : value -> int
-  (** Compute subtree height (O(n)). Internal — subject to change. *)
-
-  (**/**)
 end
 
 (**/**)

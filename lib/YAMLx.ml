@@ -247,8 +247,6 @@ module Nodes = struct
 
   let to_plain_yaml_exn ?strict ?expansion_limit docs =
     Printer.to_plain_yaml ?strict ?expansion_limit docs
-
-  let height = node_height
 end
 
 module Values = struct
@@ -271,9 +269,6 @@ module Values = struct
 
   let one_of_yaml ?max_depth ?expansion_limit input =
     catch_errors (fun () -> one_of_yaml_exn ?max_depth ?expansion_limit input)
-
-  let equal = equal_value
-  let height = value_height
 end
 
 (* ------------------------------------------------------------------ *)

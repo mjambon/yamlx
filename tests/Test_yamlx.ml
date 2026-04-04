@@ -199,7 +199,7 @@ let encoding_tests () =
 
 type values = YAMLx.value list [@@deriving show { with_path = false }]
 
-let equal_values a b = List.equal YAMLx.Values.equal a b
+let equal_values a b = List.equal YAMLx.equal_value a b
 let yamlx_values = Testo.testable show_values equal_values
 
 (** Round-trip helpers.
@@ -423,12 +423,12 @@ let depth_limit_tests () =
         match YAMLx.Nodes.of_yaml_exn "- - a\n  - b\n" with
         | [ node ] ->
             (* outer sequence has height 3: seq → seq → scalar *)
-            assert (YAMLx.Nodes.height node = 3)
+            assert (YAMLx.node_height node = 3)
         | _ -> failwith "expected one document");
     Testo.create ~category:[ "depth-limit" ]
       "value_height reflects correct subtree height" (fun () ->
         match YAMLx.Values.of_yaml_exn "- - 1\n  - 2\n" with
-        | [ v ] -> assert (YAMLx.Values.height v = 3)
+        | [ v ] -> assert (YAMLx.value_height v = 3)
         | _ -> failwith "expected one document");
   ]
 
