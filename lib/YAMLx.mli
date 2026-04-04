@@ -245,10 +245,10 @@ module Values : sig
       (default: {!default_expansion_limit}). *)
 
   val one_of_yaml_exn :
-    ?max_depth:int -> ?expansion_limit:int -> string -> value option
-  (** Parse a YAML string expecting at most one document. Returns [Some v] for a
-      single document, or [None] for an empty stream. Raises [Invalid_argument]
-      if the input contains more than one document.
+    ?max_depth:int -> ?expansion_limit:int -> string -> value
+  (** Parse a YAML string expecting exactly one document and return its value.
+      Raises [Invalid_argument] if the input contains zero or more than one
+      document.
 
       Raises {!Scan_error}, {!Parse_error}, {!Depth_limit_exceeded}, or
       {!Expansion_limit_exceeded} on errors (same conditions as {!of_yaml_exn}).
