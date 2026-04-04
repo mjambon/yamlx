@@ -1,4 +1,4 @@
-(** YAML 1.2 scanner (tokeniser). Transforms a character stream (Reader) into a
+(** YAML 1.2 scanner (tokenizer). Transforms a character stream (Reader) into a
     token stream consumed by the Parser. This is by far the most complex module
     in the library.
 

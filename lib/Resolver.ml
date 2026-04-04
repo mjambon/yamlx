@@ -77,6 +77,12 @@ let try_float s =
 (** Canonical tag URI prefix for YAML standard types. *)
 let yaml_prefix = "tag:yaml.org,2002:"
 
+let null_tag = yaml_prefix ^ "null"
+let bool_tag = yaml_prefix ^ "bool"
+let int_tag = yaml_prefix ^ "int"
+let float_tag = yaml_prefix ^ "float"
+let str_tag = yaml_prefix ^ "str"
+
 (** Resolve a plain scalar's tag according to the JSON schema. Returns the
     canonical tag URI. *)
 let resolve_plain_tag s =
@@ -120,11 +126,6 @@ let parse_int s =
 let resolve_scalar ~(loc : Types.loc) ~(explicit_tag : string option)
     ~(style : scalar_style) ~(value : string) : Types.value =
   let tag = effective_tag ~explicit_tag ~style ~value in
-  let str_tag = yaml_prefix ^ "str" in
-  let int_tag = yaml_prefix ^ "int" in
-  let float_tag = yaml_prefix ^ "float" in
-  let bool_tag = yaml_prefix ^ "bool" in
-  let null_tag = yaml_prefix ^ "null" in
   if tag = null_tag then Null loc
   else if tag = bool_tag then Bool (loc, is_true_str value)
   else if tag = int_tag then

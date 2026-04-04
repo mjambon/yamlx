@@ -36,20 +36,21 @@ type cursor = (int * bool * string) list ref
 let make_cursor comments =
   ref (List.sort (fun (a, _, _) (b, _, _) -> compare a b) comments)
 
-(** Consume and return comments satisfying [pred]. *)
-let take_while pred (cur : cursor) =
-  let taken = ref [] in
-  while !cur <> [] && pred (List.hd !cur) do
-    taken := List.hd !cur :: !taken;
-    cur := List.tl !cur
-  done;
-  List.rev !taken
+(** Take elements from the front of [xs] as long as they satisfy [p]. Returns
+    the matching prefix (in order) and the remaining suffix. *)
+let rec take_while p acc xs =
+  match xs with
+  | [] -> (List.rev acc, [])
+  | x :: tail -> if p x then take_while p (x :: acc) tail else (List.rev acc, xs)
 
 (** Consume and return the texts of non-line-comment entries at lines strictly
     before [line]. *)
 let take_head_before line cur =
-  take_while (fun (l, is_line, _) -> (not is_line) && l < line) cur
-  |> List_ext.map (fun (_, _, t) -> t)
+  let taken, rest =
+    take_while (fun (l, is_line, _) -> (not is_line) && l < line) [] !cur
+  in
+  cur := rest;
+  List_ext.map (fun (_, _, t) -> t) taken
 
 (** Consume and return the text of a line-comment entry exactly at [line], if
     present. *)
