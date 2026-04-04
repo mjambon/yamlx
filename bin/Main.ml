@@ -13,7 +13,7 @@
 (* Output format                                                         *)
 (* ------------------------------------------------------------------ *)
 
-type format = Events | Yaml | Plain | Value | Node | Noloc
+type format = Events | Yaml | Plain | Value | Node | Noloc | Value_noloc
 
 let format = ref Yaml
 let strict = ref false
@@ -26,12 +26,13 @@ let set_format s =
   | "value" -> format := Value
   | "node" -> format := Node
   | "node-noloc" -> format := Noloc
+  | "value-noloc" -> format := Value_noloc
   | other ->
       raise
         (Arg.Bad
            (Printf.sprintf
-              "unknown format %S (choose: yaml, plain, events, value, node, \
-               node-noloc)"
+              "unknown format %S (choose: yaml, plain, events, value, \
+               value-noloc, node, node-noloc)"
               other))
 
 let usage_msg =
@@ -48,6 +49,7 @@ let usage_msg =
             converted to block; raises an error on complex mapping keys
     value   Typed-value tree: Null / Bool / Int / Float / String / Seq / Map
             Useful for checking how scalars are resolved (e.g. is "1e2" a Float?)
+    value-noloc  Same as value but without source locations
     node    Full AST with source locations, anchors, tags, scalar styles, and
             best-effort comment preservation
     node-noloc  Same as node but without source locations and heights
@@ -159,6 +161,30 @@ let rec noloc_node = function
         }
 
 (* ------------------------------------------------------------------ *)
+(* value-noloc type: value tree without source locations                 *)
+(* ------------------------------------------------------------------ *)
+
+type noloc_value =
+  | Null
+  | Bool of bool
+  | Int of int64
+  | Float of float
+  | String of string
+  | Seq of noloc_value list
+  | Map of (noloc_value * noloc_value) list
+[@@deriving show { with_path = false }]
+
+let rec noloc_value = function
+  | YAMLx.Null _ -> Null
+  | YAMLx.Bool (_, b) -> Bool b
+  | YAMLx.Int (_, i) -> Int i
+  | YAMLx.Float (_, f) -> Float f
+  | YAMLx.String (_, s) -> String s
+  | YAMLx.Seq (_, vs) -> Seq (List.map noloc_value vs)
+  | YAMLx.Map (_, pairs) ->
+      Map (List.map (fun (_, k, v) -> (noloc_value k, noloc_value v)) pairs)
+
+(* ------------------------------------------------------------------ *)
 (* Input reading                                                         *)
 (* ------------------------------------------------------------------ *)
 
@@ -264,6 +290,19 @@ let () =
                 Buffer.add_string buf (show_noloc_node (noloc_node n));
                 Buffer.add_char buf '\n')
               nodes;
+            Buffer.contents buf)
+        |> or_die
+    | Value_noloc ->
+        (match source with
+          | `Stdin -> YAMLx.Values.of_yaml (read_stdin ())
+          | `File path -> YAMLx.Values.of_yaml_file path)
+        |> Result.map (fun values ->
+            let buf = Buffer.create 256 in
+            List.iter
+              (fun v ->
+                Buffer.add_string buf (show_noloc_value (noloc_value v));
+                Buffer.add_char buf '\n')
+              values;
             Buffer.contents buf)
         |> or_die
   in
