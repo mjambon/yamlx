@@ -500,11 +500,81 @@ let suite_tests () =
   end
 
 (* ------------------------------------------------------------------ *)
+(* Pretty-printer output tests                                           *)
+(* ------------------------------------------------------------------ *)
+
+(** These tests pin down the exact string produced by [Nodes.to_yaml]. Unlike
+    the round-trip tests they do not merely check structural equivalence — they
+    verify that specific formatting choices are made. *)
+let printer_tests () =
+  let check input expected () =
+    let actual = YAMLx.Nodes.to_yaml (YAMLx.Nodes.of_yaml_exn input) in
+    Testo.(check text) expected actual
+  in
+  [
+    (* Compact mapping notation: first key on the same line as "-" *)
+    Testo.create ~category:[ "printer" ] "compact mapping — single key"
+      (check "- a: 1\n" "- a: 1\n");
+    Testo.create ~category:[ "printer" ] "compact mapping — multiple keys"
+      (check "- a: 1\n  b: 2\n" "- a: 1\n  b: 2\n");
+    Testo.create ~category:[ "printer" ]
+      "compact mapping — nested block mapping value"
+      (check "- a:\n    x: 1\n" "- a:\n    x: 1\n");
+    Testo.create ~category:[ "printer" ]
+      "compact mapping — nested block mapping value with sibling key"
+      (check "- a:\n    x: 1\n  b: 2\n" "- a:\n    x: 1\n  b: 2\n");
+    Testo.create ~category:[ "printer" ]
+      "compact mapping — nested block sequence value"
+      (check "- a:\n  - 1\n  - 2\n" "- a:\n    - 1\n    - 2\n");
+    Testo.create ~category:[ "printer" ]
+      "compact mapping — flow sequence value preserved"
+      (check "- a: [1, 2]\n" "- a: [1, 2]\n");
+    Testo.create ~category:[ "printer" ] "compact mapping — list of mappings"
+      (check "- a: 1\n- b: 2\n" "- a: 1\n- b: 2\n");
+    (* Non-compact fallback cases *)
+    Testo.create ~category:[ "printer" ]
+      "non-compact: nested block sequence uses dash-newline"
+      (check "- - a\n  - b\n" "-\n  - a\n  - b\n");
+    (* Scalar styles *)
+    Testo.create ~category:[ "printer" ] "single-quoted scalar preserved"
+      (check "'hello world'\n" "'hello world'\n");
+    Testo.create ~category:[ "printer" ] "double-quoted scalar preserved"
+      (check "\"hello\\nworld\"\n" "\"hello\\nworld\"\n");
+    Testo.create ~category:[ "printer" ] "literal block scalar preserved"
+      (check "key: |\n  line1\n  line2\n" "key: |\n    line1\n    line2\n");
+    Testo.create ~category:[ "printer" ] "folded block scalar preserved"
+      (check "key: >\n  folded line\n" "key: >\n    folded line\n");
+    (* Collections *)
+    Testo.create ~category:[ "printer" ] "flow mapping preserved"
+      (check "{a: 1, b: 2}\n" "{a: 1, b: 2}\n");
+    Testo.create ~category:[ "printer" ] "flow sequence preserved"
+      (check "[foo, bar]\n" "[foo, bar]\n");
+    Testo.create ~category:[ "printer" ] "empty block mapping"
+      (check "{}\n" "{}\n");
+    Testo.create ~category:[ "printer" ] "empty block sequence"
+      (check "[]\n" "[]\n");
+    Testo.create ~category:[ "printer" ] "sequence in mapping"
+      (check "items:\n  - one\n  - two\n" "items:\n  - one\n  - two\n");
+    Testo.create ~category:[ "printer" ] "mapping in mapping"
+      (check "outer:\n  inner: value\n" "outer:\n  inner: value\n");
+    (* Anchors and aliases *)
+    Testo.create ~category:[ "printer" ] "anchor and alias"
+      (check "a: &x foo\nb: *x\n" "a: &x foo\nb: *x\n");
+    (* Multi-document *)
+    Testo.create ~category:[ "printer" ]
+      "multi-document: second gets --- marker"
+      (check "foo\n---\nbar\n" "foo\n--- bar\n");
+    Testo.create ~category:[ "printer" ]
+      "multi-document: block collection gets own line after ---"
+      (check "foo\n---\na: 1\n" "foo\n---\na: 1\n");
+  ]
+
+(* ------------------------------------------------------------------ *)
 (* Entry point                                                           *)
 (* ------------------------------------------------------------------ *)
 
 let () =
   Testo.interpret_argv ~project_name:"yamlx" (fun _tags ->
       unit_tests () @ encoding_tests () @ roundtrip_tests () @ comment_tests ()
-      @ expansion_limit_tests () @ depth_limit_tests () @ performance_tests ()
-      @ suite_tests ())
+      @ printer_tests () @ expansion_limit_tests () @ depth_limit_tests ()
+      @ performance_tests () @ suite_tests ())
