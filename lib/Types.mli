@@ -4,7 +4,7 @@
     (Composer → user).
 
     Pipeline overview: string/channel └─▶ Reader (UTF-8 decoding, line tracking)
-    └─▶ Scanner (tokenisation) → token list └─▶ Parser (grammar) → event list
+    └─▶ Scanner (tokenization) → token list └─▶ Parser (grammar) → event list
     └─▶ Composer (node building) → node list └─▶ Resolver (type resolution) →
     value list *)
 

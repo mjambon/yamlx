@@ -295,7 +295,7 @@ let need_more_tokens scn =
 let scan_to_next_token scn =
   let found = ref false in
   (* Tracks whether the current position is on a fresh line (no token yet on
-     this line).  Initialised to [true] when we are at column 0 so that a '#'
+     this line).  Initialized to [true] when we are at column 0 so that a '#'
      at the very start of the file, or right after a linebreak, is correctly
      classified as a head comment rather than a line comment. *)
   let had_newline = ref ((pos scn).column = 0) in
@@ -891,7 +891,7 @@ let scan_block_scalar scn style =
   (* non-blank line is found (instead of consuming all leading spaces).      *)
   let leading_buf = Buffer.create 16 in
   (* first_content_look: number of leading spaces on the first content line.
-     Used to initialise next_line_col so that folded scalars correctly treat
+     Used to initialize next_line_col so that folded scalars correctly treat
      more-indented (or spaced) first lines. *)
   let first_content_look = ref !block_indent in
   let max_blank_indent = ref 0 in
@@ -952,7 +952,7 @@ let scan_block_scalar scn style =
   (* next_line_col: column count of the next content line's leading spaces,
      optionally bumped by 1 when the first content char is whitespace (spaced
      line) so that folded scalars treat it like a more-indented line.
-     Initialised from first_content_look so that a more-indented or spaced
+     Initialized from first_content_look so that a more-indented or spaced
      first content line is correctly detected by this_more_indented. *)
   let first_spaced =
     style = Folded

@@ -111,7 +111,7 @@ Reader → Scanner → Parser → Composer → Resolver
 ```
 
 - **Reader** — UTF-8 / UTF-16 / UTF-32 input normalization.
-- **Scanner** — tokenisation, indentation, flow-level tracking, comment
+- **Scanner** — tokenization, indentation, flow-level tracking, comment
   capture.
 - **Parser** — token stream → event stream (YAML grammar).
 - **Composer** — events → node graph (anchor/alias resolution).
