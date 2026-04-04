@@ -67,6 +67,11 @@ exception Plain_error of string
 (** Raised by {!Nodes.to_plain_yaml_exn} when the input uses a feature that
     plain YAML does not support: an explicit tag or a complex mapping key. *)
 
+exception Document_count_error of string
+(** Raised by {!Values.one_of_yaml_exn} when the input contains a number of
+    documents that does not match expectations (zero or more than one). The
+    payload is a human-readable description of the mismatch. *)
+
 val catch_errors : (unit -> 'a) -> ('a, string) result
 (** Catch the exceptions exposed by this module and turn them into nice error
     messages. *)
@@ -247,12 +252,17 @@ module Values : sig
   val one_of_yaml_exn :
     ?max_depth:int -> ?expansion_limit:int -> string -> value
   (** Parse a YAML string expecting exactly one document and return its value.
-      Raises [Invalid_argument] if the input contains zero or more than one
+      Raises {!Document_count_error} if the input contains zero or more than one
       document.
 
       Raises {!Scan_error}, {!Parse_error}, {!Depth_limit_exceeded}, or
       {!Expansion_limit_exceeded} on errors (same conditions as {!of_yaml_exn}).
   *)
+
+  val one_of_yaml :
+    ?max_depth:int -> ?expansion_limit:int -> string -> (value, string) result
+  (** Like {!one_of_yaml_exn} but returns [Ok v] on success or [Error msg] on
+      any failure, including wrong document count. Does not raise. *)
 
   val equal : value -> value -> bool
   (** Structural equality that ignores source locations. Two values are equal

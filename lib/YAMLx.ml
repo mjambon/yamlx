@@ -196,6 +196,7 @@ let parse_nodes ?(max_depth = Types.default_max_depth) (input : string) :
 exception Expansion_limit_exceeded = Types.Expansion_limit_exceeded
 exception Depth_limit_exceeded = Types.Depth_limit_exceeded
 exception Plain_error = Printer.Plain_error
+exception Document_count_error of string
 
 let default_expansion_limit = Types.default_expansion_limit
 let default_max_depth = Types.default_max_depth
@@ -216,6 +217,7 @@ let catch_errors f =
   | Depth_limit_exceeded n ->
       Error (Printf.sprintf "depth limit exceeded (%d levels)" n)
   | Plain_error msg -> Error ("plain error: " ^ msg)
+  | Document_count_error msg -> Error ("document count error: " ^ msg)
 
 let register_exception_printers () =
   Printexc.register_printer (function
@@ -226,6 +228,7 @@ let register_exception_printers () =
     | Depth_limit_exceeded n ->
         Some (Printf.sprintf "YAMLx.Depth_limit_exceeded (%d)" n)
     | Plain_error msg -> Some ("YAMLx.Plain_error: " ^ msg)
+    | Document_count_error msg -> Some ("YAMLx.Document_count_error: " ^ msg)
     | _ -> None)
 
 (* ------------------------------------------------------------------ *)
@@ -262,10 +265,12 @@ module Values = struct
 
   let one_of_yaml_exn ?max_depth ?expansion_limit input =
     match of_yaml_exn ?max_depth ?expansion_limit input with
-    | [] -> invalid_arg "YAMLx.Values.one_of_yaml_exn: no document in input"
+    | [] -> raise (Document_count_error "no document in input")
     | [ v ] -> v
-    | _ :: _ :: _ ->
-        invalid_arg "YAMLx.Values.one_of_yaml_exn: multiple documents in input"
+    | _ :: _ :: _ -> raise (Document_count_error "multiple documents in input")
+
+  let one_of_yaml ?max_depth ?expansion_limit input =
+    catch_errors (fun () -> one_of_yaml_exn ?max_depth ?expansion_limit input)
 
   let equal = equal_value
   let height = value_height
