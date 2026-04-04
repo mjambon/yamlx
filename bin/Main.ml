@@ -99,7 +99,7 @@ let () =
     | path :: _ -> read_file path
   in
   let nodes_or_exit () =
-    match YAMLx.parse_nodes input with
+    match YAMLx.Nodes.of_yaml_exn input with
     | exception YAMLx.Scan_error e ->
         Printf.eprintf "Scan error at line %d col %d: %s\n" e.pos.line
           e.pos.column e.msg;
@@ -123,16 +123,18 @@ let () =
               e.pos.column e.msg;
             exit 1
         | events -> YAMLx.events_to_tree events)
-    | Yaml -> YAMLx.to_yaml (nodes_or_exit ())
+    | Yaml -> YAMLx.Nodes.to_yaml (nodes_or_exit ())
     | Plain -> (
-        match YAMLx.to_plain_yaml ~strict:!strict (nodes_or_exit ()) with
-        | exception YAMLx.Plain_error msg ->
+        match
+          YAMLx.Nodes.to_plain_yaml_exn ~strict:!strict (nodes_or_exit ())
+        with
+        | exception YAMLx.Nodes.Plain_error msg ->
             Printf.eprintf "Plain error: %s\n" msg;
             exit 1
         | s -> s)
     | Value ->
         let values =
-          match YAMLx.of_string input with
+          match YAMLx.Values.of_yaml_exn input with
           | exception YAMLx.Scan_error e ->
               Printf.eprintf "Scan error at line %d col %d: %s\n" e.pos.line
                 e.pos.column e.msg;

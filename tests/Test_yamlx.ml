@@ -136,27 +136,27 @@ let unit_tests () =
       (check_parse "explicit doc" "---\nfoo"
          "+STR\n+DOC ---\n=VAL :foo\n-DOC\n-STR\n");
     Testo.create "resolver null" (fun () ->
-        let vs = YAMLx.of_string "~" in
+        let vs = YAMLx.Values.of_yaml_exn "~" in
         match vs with
         | [ YAMLx.Null _ ] -> ()
         | _ -> failwith "expected Null");
     Testo.create "resolver bool true" (fun () ->
-        let vs = YAMLx.of_string "true" in
+        let vs = YAMLx.Values.of_yaml_exn "true" in
         match vs with
         | [ YAMLx.Bool (_, true) ] -> ()
         | _ -> failwith "expected Bool true");
     Testo.create "resolver int" (fun () ->
-        let vs = YAMLx.of_string "42" in
+        let vs = YAMLx.Values.of_yaml_exn "42" in
         match vs with
         | [ YAMLx.Int (_, 42L) ] -> ()
         | _ -> failwith "expected Int 42");
     Testo.create "resolver float" (fun () ->
-        let vs = YAMLx.of_string "3.14" in
+        let vs = YAMLx.Values.of_yaml_exn "3.14" in
         match vs with
         | [ YAMLx.Float (_, f) ] when Float.abs (f -. 3.14) < 1e-10 -> ()
         | _ -> failwith "expected Float ~3.14");
     Testo.create "resolver string (quoted)" (fun () ->
-        let vs = YAMLx.of_string {|"42"|} in
+        let vs = YAMLx.Values.of_yaml_exn {|"42"|} in
         match vs with
         | [ YAMLx.String (_, "42") ] -> ()
         | _ -> failwith "expected String \"42\"");
@@ -168,7 +168,7 @@ let unit_tests () =
 
 let encoding_tests () =
   let check_bom_error label input () =
-    match YAMLx.parse_nodes input with
+    match YAMLx.Nodes.of_yaml_exn input with
     | exception YAMLx.Scan_error { msg; _ }
       when String.length msg > 6 && String.sub msg 0 6 = "input " ->
         ()
@@ -187,7 +187,7 @@ let encoding_tests () =
       (check_bom_error "UTF-16 LE" "\xFF\xFE");
     Testo.create ~category:[ "encoding" ] "UTF-8 BOM accepted" (fun () ->
         (* U+FEFF encoded as UTF-8: EF BB BF — should parse fine, BOM is stripped *)
-        let nodes = YAMLx.parse_nodes "\xEF\xBB\xBFhello" in
+        let nodes = YAMLx.Nodes.of_yaml_exn "\xEF\xBB\xBFhello" in
         match nodes with
         | [ YAMLx.Scalar_node { value = "hello"; _ } ] -> ()
         | _ -> failwith "expected scalar 'hello' after UTF-8 BOM");
@@ -197,8 +197,9 @@ let encoding_tests () =
 (* Round-trip tests                                                       *)
 (* ------------------------------------------------------------------ *)
 
-type values = YAMLx.value list [@@deriving eq, show { with_path = false }]
+type values = YAMLx.value list [@@deriving show { with_path = false }]
 
+let equal_values a b = List.equal YAMLx.Values.equal a b
 let yamlx_values = Testo.testable show_values equal_values
 
 (** Round-trip helpers.
@@ -212,13 +213,16 @@ let yamlx_values = Testo.testable show_values equal_values
     (parse_nodes input)) *)
 let roundtrip_tests () =
   let check_idempotent input () =
-    let yaml1 = YAMLx.to_yaml (YAMLx.parse_nodes input) in
-    let yaml2 = YAMLx.to_yaml (YAMLx.parse_nodes yaml1) in
+    let yaml1 = YAMLx.Nodes.to_yaml (YAMLx.Nodes.of_yaml_exn input) in
+    let yaml2 = YAMLx.Nodes.to_yaml (YAMLx.Nodes.of_yaml_exn yaml1) in
     Testo.(check text) yaml1 yaml2
   in
   let check_values input () =
-    let before = YAMLx.of_string input in
-    let after = YAMLx.of_string (YAMLx.to_yaml (YAMLx.parse_nodes input)) in
+    let before = YAMLx.Values.of_yaml_exn input in
+    let after =
+      YAMLx.Values.of_yaml_exn
+        (YAMLx.Nodes.to_yaml (YAMLx.Nodes.of_yaml_exn input))
+    in
     Testo.(check yamlx_values) before after
   in
   let check label input =
@@ -266,7 +270,7 @@ let roundtrip_tests () =
     perfectly. *)
 let comment_tests () =
   let check input expected () =
-    let actual = YAMLx.to_yaml (YAMLx.parse_nodes input) in
+    let actual = YAMLx.Nodes.to_yaml (YAMLx.Nodes.of_yaml_exn input) in
     Testo.(check text) expected actual
   in
   [
@@ -301,7 +305,7 @@ let comment_tests () =
       (fun () ->
         (* We cannot embed a comment inside [a, b] in the source; we just verify
            that a flow sequence with no comments round-trips without adding any. *)
-        let out = YAMLx.to_yaml (YAMLx.parse_nodes "[a, b]\n") in
+        let out = YAMLx.Nodes.to_yaml (YAMLx.Nodes.of_yaml_exn "[a, b]\n") in
         if String.contains out '#' then
           failwith (Printf.sprintf "unexpected '#' in output: %S" out));
   ]
@@ -331,20 +335,20 @@ let expansion_limit_tests () =
   [
     Testo.create ~category:[ "expansion-limit" ]
       "YAML bomb raises Expansion_limit_exceeded via of_string" (fun () ->
-        match YAMLx.of_string yaml_bomb with
+        match YAMLx.Values.of_yaml_exn yaml_bomb with
         | exception YAMLx.Expansion_limit_exceeded n ->
             (* limit payload should equal the configured default *)
             assert (n = YAMLx.default_expansion_limit)
         | _ -> failwith "expected Expansion_limit_exceeded");
     Testo.create ~category:[ "expansion-limit" ]
       "YAML bomb raises Expansion_limit_exceeded via to_plain_yaml" (fun () ->
-        let nodes = YAMLx.parse_nodes yaml_bomb in
-        match YAMLx.to_plain_yaml nodes with
+        let nodes = YAMLx.Nodes.of_yaml_exn yaml_bomb in
+        match YAMLx.Nodes.to_plain_yaml_exn nodes with
         | exception YAMLx.Expansion_limit_exceeded _ -> ()
         | _ -> failwith "expected Expansion_limit_exceeded");
     Testo.create ~category:[ "expansion-limit" ]
       "YAML bomb is Error via of_string_result" (fun () ->
-        match YAMLx.of_string_result yaml_bomb with
+        match YAMLx.Values.of_yaml yaml_bomb with
         | Error msg when String.sub msg 0 10 = "expansion " -> ()
         | Ok _ -> failwith "expected Error"
         | Error msg -> failwith ("unexpected error message: " ^ msg));
@@ -352,22 +356,22 @@ let expansion_limit_tests () =
       (fun () ->
         (* Even a tiny document with aliases must respect a limit of 1. *)
         let input = "x: &x foo\ny: *x\n" in
-        match YAMLx.of_string ~expansion_limit:1 input with
+        match YAMLx.Values.of_yaml_exn ~expansion_limit:1 input with
         | exception YAMLx.Expansion_limit_exceeded 1 -> ()
         | _ -> failwith "expected Expansion_limit_exceeded 1");
     Testo.create ~category:[ "expansion-limit" ]
       "normal aliases within default limit succeed" (fun () ->
         (* A small number of alias expansions must not be blocked. *)
         let input = "x: &x foo\na: *x\nb: *x\nc: *x\n" in
-        let values = YAMLx.of_string input in
+        let values = YAMLx.Values.of_yaml_exn input in
         match values with
         | [ YAMLx.Map (_, pairs) ] when List.length pairs = 4 -> ()
         | _ -> failwith "unexpected value");
     Testo.create ~category:[ "expansion-limit" ]
       "to_yaml does not expand aliases and ignores limit" (fun () ->
         (* to_yaml emits *alias syntax without expansion — the bomb is safe. *)
-        let nodes = YAMLx.parse_nodes yaml_bomb in
-        let out = YAMLx.to_yaml nodes in
+        let nodes = YAMLx.Nodes.of_yaml_exn yaml_bomb in
+        let out = YAMLx.Nodes.to_yaml nodes in
         (* Output should contain alias references, not an explosion *)
         assert (String.length out < 10_000));
   ]
@@ -383,7 +387,7 @@ let depth_limit_tests () =
       (fun () ->
         let n = YAMLx.default_max_depth + 1 in
         let input = String.make n '[' ^ String.make n ']' in
-        match YAMLx.parse_nodes input with
+        match YAMLx.Nodes.of_yaml_exn input with
         | exception YAMLx.Depth_limit_exceeded lim ->
             assert (lim = YAMLx.default_max_depth)
         | _ -> failwith "expected Depth_limit_exceeded");
@@ -391,14 +395,14 @@ let depth_limit_tests () =
       "deeply nested input raises Depth_limit_exceeded via of_string" (fun () ->
         let n = YAMLx.default_max_depth + 1 in
         let input = String.make n '[' ^ String.make n ']' in
-        match YAMLx.of_string input with
+        match YAMLx.Values.of_yaml_exn input with
         | exception YAMLx.Depth_limit_exceeded _ -> ()
         | _ -> failwith "expected Depth_limit_exceeded");
     Testo.create ~category:[ "depth-limit" ]
       "depth limit is Error via of_string_result" (fun () ->
         let n = YAMLx.default_max_depth + 1 in
         let input = String.make n '[' ^ String.make n ']' in
-        match YAMLx.of_string_result input with
+        match YAMLx.Values.of_yaml input with
         | Error msg when String.length msg >= 5 && String.sub msg 0 5 = "depth"
           ->
             ()
@@ -406,25 +410,25 @@ let depth_limit_tests () =
         | Error msg -> failwith ("unexpected error message: " ^ msg));
     Testo.create ~category:[ "depth-limit" ] "custom low limit is respected"
       (fun () ->
-        match YAMLx.parse_nodes ~max_depth:2 "[[a]]" with
+        match YAMLx.Nodes.of_yaml_exn ~max_depth:2 "[[a]]" with
         | exception YAMLx.Depth_limit_exceeded 2 -> ()
         | _ -> failwith "expected Depth_limit_exceeded 2");
     Testo.create ~category:[ "depth-limit" ]
       "input exactly at the limit is accepted" (fun () ->
         let n = YAMLx.default_max_depth in
         let input = String.make n '[' ^ String.make n ']' in
-        ignore (YAMLx.parse_nodes input));
+        ignore (YAMLx.Nodes.of_yaml_exn input));
     Testo.create ~category:[ "depth-limit" ]
       "node_height reflects correct subtree height" (fun () ->
-        match YAMLx.parse_nodes "- - a\n  - b\n" with
+        match YAMLx.Nodes.of_yaml_exn "- - a\n  - b\n" with
         | [ node ] ->
             (* outer sequence has height 3: seq → seq → scalar *)
-            assert (YAMLx.node_height node = 3)
+            assert (YAMLx.Nodes.height node = 3)
         | _ -> failwith "expected one document");
     Testo.create ~category:[ "depth-limit" ]
       "value_height reflects correct subtree height" (fun () ->
-        match YAMLx.of_string "- - 1\n  - 2\n" with
-        | [ v ] -> assert (YAMLx.value_height v = 3)
+        match YAMLx.Values.of_yaml_exn "- - 1\n  - 2\n" with
+        | [ v ] -> assert (YAMLx.Values.height v = 3)
         | _ -> failwith "expected one document");
   ]
 
@@ -443,7 +447,7 @@ let performance_tests () =
         let time n =
           let input = String.make n '[' ^ String.make n ']' in
           let t0 = Unix.gettimeofday () in
-          (try ignore (YAMLx.parse_nodes ~max_depth:n input) with
+          (try ignore (YAMLx.Nodes.of_yaml_exn ~max_depth:n input) with
           | _ -> ());
           Unix.gettimeofday () -. t0
         in

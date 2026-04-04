@@ -190,18 +190,7 @@ let parse_nodes ?(max_depth = Types.default_max_depth) (input : string) :
   Comment_attacher.attach nodes raw_comments
 
 (* ------------------------------------------------------------------ *)
-(* Public API — Pretty-printing                                          *)
-(* ------------------------------------------------------------------ *)
-
-let to_yaml = Printer.to_yaml
-
-exception Plain_error = Printer.Plain_error
-
-let to_plain_yaml ?strict ?expansion_limit =
-  Printer.to_plain_yaml ?strict ?expansion_limit
-
-(* ------------------------------------------------------------------ *)
-(* Public API — Typed values                                             *)
+(* Public API — exceptions and defaults                                  *)
 (* ------------------------------------------------------------------ *)
 
 exception Expansion_limit_exceeded = Types.Expansion_limit_exceeded
@@ -210,19 +199,6 @@ exception Depth_limit_exceeded = Types.Depth_limit_exceeded
 let default_expansion_limit = Types.default_expansion_limit
 let default_max_depth = Types.default_max_depth
 
-let of_string ?(max_depth = Types.default_max_depth)
-    ?(expansion_limit = Types.default_expansion_limit) (input : string) :
-    value list =
-  let nodes = parse_nodes ~max_depth input in
-  Resolver.resolve_documents ~expansion_limit nodes
-
-let one_of_string ?(max_depth = Types.default_max_depth)
-    ?(expansion_limit = Types.default_expansion_limit) (input : string) : value
-    =
-  match of_string ~max_depth ~expansion_limit input with
-  | [] -> raise Not_found
-  | v :: _ -> v
-
 (* ------------------------------------------------------------------ *)
 (* Error formatting                                                      *)
 (* ------------------------------------------------------------------ *)
@@ -230,16 +206,53 @@ let one_of_string ?(max_depth = Types.default_max_depth)
 let string_of_error (e : yaml_error) : string =
   Printf.sprintf "line %d, column %d: %s" e.pos.line e.pos.column e.msg
 
-let of_string_result ?(max_depth = Types.default_max_depth)
+(* Internal helper used by Values submodule *)
+let of_string ?(max_depth = Types.default_max_depth)
     ?(expansion_limit = Types.default_expansion_limit) (input : string) :
-    (value list, string) result =
-  try Ok (of_string ~max_depth ~expansion_limit input) with
-  | Scan_error e -> Error ("scan error: " ^ string_of_error e)
-  | Parse_error e -> Error ("parse error: " ^ string_of_error e)
-  | Expansion_limit_exceeded n ->
-      Error (Printf.sprintf "expansion limit exceeded (%d nodes)" n)
-  | Depth_limit_exceeded n ->
-      Error (Printf.sprintf "depth limit exceeded (%d levels)" n)
+    value list =
+  let nodes = parse_nodes ~max_depth input in
+  Resolver.resolve_documents ~expansion_limit nodes
+
+(* ------------------------------------------------------------------ *)
+(* Public submodules                                                     *)
+(* ------------------------------------------------------------------ *)
+
+module Nodes = struct
+  type t = node list
+
+  let of_yaml_exn = parse_nodes
+  let to_yaml = Printer.to_yaml
+
+  exception Plain_error = Printer.Plain_error
+
+  let to_plain_yaml_exn ?strict ?expansion_limit docs =
+    Printer.to_plain_yaml ?strict ?expansion_limit docs
+
+  let height = node_height
+end
+
+module Values = struct
+  type t = value list
+
+  let of_yaml ?max_depth ?expansion_limit input =
+    try Ok (of_string ?max_depth ?expansion_limit input) with
+    | Scan_error e -> Error ("scan error: " ^ string_of_error e)
+    | Parse_error e -> Error ("parse error: " ^ string_of_error e)
+    | Expansion_limit_exceeded n ->
+        Error (Printf.sprintf "expansion limit exceeded (%d nodes)" n)
+    | Depth_limit_exceeded n ->
+        Error (Printf.sprintf "depth limit exceeded (%d levels)" n)
+
+  let of_yaml_exn = of_string
+
+  let one_of_yaml ?max_depth ?expansion_limit input =
+    match of_string ?max_depth ?expansion_limit input with
+    | [] -> None
+    | v :: _ -> Some v
+
+  let equal = equal_value
+  let height = value_height
+end
 
 (* ------------------------------------------------------------------ *)
 (* Event printing — internal helpers for tests and the CLI tool         *)
