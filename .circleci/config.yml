@@ -58,7 +58,7 @@ jobs:
           command: ./.circleci/setup-system
       - run:
           name: Install pre-commit
-          command: sudo pip install pre-commit
+          command: sudo apt-get install -y pre-commit
       - run:
           name: Install ocamlformat
           command: opam install -y ocamlformat
