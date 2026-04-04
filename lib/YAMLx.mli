@@ -72,9 +72,12 @@ exception Document_count_error of string
     documents that does not match expectations (zero or more than one). The
     payload is a human-readable description of the mismatch. *)
 
-val catch_errors : (unit -> 'a) -> ('a, string) result
-(** Catch the exceptions exposed by this module and turn them into nice error
-    messages. *)
+val catch_errors : ?file:string -> (unit -> 'a) -> ('a, string) result
+(** Catch the exceptions exposed by this module and return [Ok _] or
+    [Error msg]. When [~file] is given it is prepended to every error message:
+    positional errors (scan/parse) become
+    ["file foo.yaml, line L, column C: msg"] and non-positional errors become
+    ["file foo.yaml: msg"]. *)
 
 val register_exception_printers : unit -> unit
 (** Register nice exception printers for the exceptions exposed by this module.
@@ -197,9 +200,15 @@ module Nodes : sig
   type t = node list
   (** One {!node} per YAML document in the input stream. *)
 
-  val of_yaml : ?max_depth:int -> string -> (t, string) result
+  val of_yaml : ?file:string -> ?max_depth:int -> string -> (t, string) result
   (** Like {!of_yaml_exn} but returns [Ok nodes] on success or [Error msg] on
-      any failure. Does not raise. *)
+      any failure. Does not raise. [~file] is prepended to error messages (see
+      {!catch_errors}). *)
+
+  val of_yaml_file : ?max_depth:int -> string -> (t, string) result
+  (** Like {!of_yaml} but reads the YAML from the file at the given path.
+      File-read errors are returned as [Error msg]. The file path is
+      automatically prepended to all error messages. *)
 
   val of_yaml_exn : ?max_depth:int -> string -> t
   (** Parse a YAML string and return one node per document. Use this when you
@@ -247,10 +256,21 @@ module Values : sig
   (** One {!value} per YAML document in the input stream. *)
 
   val of_yaml :
-    ?max_depth:int -> ?expansion_limit:int -> string -> (t, string) result
+    ?file:string ->
+    ?max_depth:int ->
+    ?expansion_limit:int ->
+    string ->
+    (t, string) result
   (** Parse a YAML string and resolve each document to a typed value. Returns
       [Ok docs] on success or [Error msg] on any failure, including scan errors,
-      parse errors, and limit violations. Does not raise. *)
+      parse errors, and limit violations. Does not raise. [~file] is prepended
+      to error messages (see {!catch_errors}). *)
+
+  val of_yaml_file :
+    ?max_depth:int -> ?expansion_limit:int -> string -> (t, string) result
+  (** Like {!of_yaml} but reads the YAML from the file at the given path.
+      File-read errors are returned as [Error msg]. The file path is
+      automatically prepended to all error messages. *)
 
   val of_yaml_exn : ?max_depth:int -> ?expansion_limit:int -> string -> t
   (** Like {!of_yaml} but raises instead of returning a result.
@@ -262,9 +282,20 @@ module Values : sig
       (default: {!default_expansion_limit}). *)
 
   val one_of_yaml :
-    ?max_depth:int -> ?expansion_limit:int -> string -> (value, string) result
+    ?file:string ->
+    ?max_depth:int ->
+    ?expansion_limit:int ->
+    string ->
+    (value, string) result
   (** Like {!one_of_yaml_exn} but returns [Ok v] on success or [Error msg] on
-      any failure, including wrong document count. Does not raise. *)
+      any failure, including wrong document count. Does not raise. [~file] is
+      prepended to error messages (see {!catch_errors}). *)
+
+  val one_of_yaml_file :
+    ?max_depth:int -> ?expansion_limit:int -> string -> (value, string) result
+  (** Like {!one_of_yaml} but reads the YAML from the file at the given path.
+      File-read errors are returned as [Error msg]. The file path is
+      automatically prepended to all error messages. *)
 
   val one_of_yaml_exn :
     ?max_depth:int -> ?expansion_limit:int -> string -> value

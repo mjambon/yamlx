@@ -208,16 +208,38 @@ let default_max_depth = Types.default_max_depth
 let string_of_error (e : yaml_error) : string =
   Printf.sprintf "line %d, column %d: %s" e.pos.line e.pos.column e.msg
 
-let catch_errors f =
+let read_file path =
+  let ic = open_in path in
+  Fun.protect
+    ~finally:(fun () -> close_in ic)
+    (fun () ->
+      let n = in_channel_length ic in
+      let s = Bytes.create n in
+      really_input ic s 0 n;
+      Bytes.to_string s)
+
+let catch_errors ?file f =
+  let pos_error prefix e =
+    match file with
+    | None -> prefix ^ string_of_error e
+    | Some path -> Printf.sprintf "file %s, %s" path (string_of_error e)
+  in
+  let other_error msg =
+    match file with
+    | None -> msg
+    | Some path -> "file " ^ path ^ ": " ^ msg
+  in
   try Ok (f ()) with
-  | Scan_error e -> Error ("scan error: " ^ string_of_error e)
-  | Parse_error e -> Error ("parse error: " ^ string_of_error e)
+  | Scan_error e -> Error (pos_error "scan error: " e)
+  | Parse_error e -> Error (pos_error "parse error: " e)
   | Expansion_limit_exceeded n ->
-      Error (Printf.sprintf "expansion limit exceeded (%d nodes)" n)
+      Error
+        (other_error (Printf.sprintf "expansion limit exceeded (%d nodes)" n))
   | Depth_limit_exceeded n ->
-      Error (Printf.sprintf "depth limit exceeded (%d levels)" n)
-  | Plain_error msg -> Error ("plain error: " ^ msg)
-  | Document_count_error msg -> Error ("document count error: " ^ msg)
+      Error (other_error (Printf.sprintf "depth limit exceeded (%d levels)" n))
+  | Plain_error msg -> Error (other_error ("plain error: " ^ msg))
+  | Document_count_error msg ->
+      Error (other_error ("document count error: " ^ msg))
 
 let register_exception_printers () =
   Printexc.register_printer (function
@@ -240,8 +262,16 @@ module Nodes = struct
 
   let of_yaml_exn = parse_nodes
 
-  let of_yaml ?max_depth input =
-    catch_errors (fun () -> of_yaml_exn ?max_depth input)
+  let of_yaml ?file ?max_depth input =
+    catch_errors ?file (fun () -> of_yaml_exn ?max_depth input)
+
+  let of_yaml_file ?max_depth path =
+    match
+      try Ok (read_file path) with
+      | Sys_error msg -> Error msg
+    with
+    | Error msg -> Error ("file " ^ path ^ ": " ^ msg)
+    | Ok input -> of_yaml ~file:path ?max_depth input
 
   let to_yaml = Printer.to_yaml
 
@@ -258,8 +288,16 @@ module Values = struct
     let nodes = parse_nodes ~max_depth input in
     Resolver.resolve_documents ~expansion_limit nodes
 
-  let of_yaml ?max_depth ?expansion_limit input =
-    catch_errors (fun () -> of_yaml_exn ?max_depth ?expansion_limit input)
+  let of_yaml ?file ?max_depth ?expansion_limit input =
+    catch_errors ?file (fun () -> of_yaml_exn ?max_depth ?expansion_limit input)
+
+  let of_yaml_file ?max_depth ?expansion_limit path =
+    match
+      try Ok (read_file path) with
+      | Sys_error msg -> Error msg
+    with
+    | Error msg -> Error ("file " ^ path ^ ": " ^ msg)
+    | Ok input -> of_yaml ~file:path ?max_depth ?expansion_limit input
 
   let one_of_yaml_exn ?max_depth ?expansion_limit input =
     match of_yaml_exn ?max_depth ?expansion_limit input with
@@ -267,8 +305,17 @@ module Values = struct
     | [ v ] -> v
     | _ :: _ :: _ -> raise (Document_count_error "multiple documents in input")
 
-  let one_of_yaml ?max_depth ?expansion_limit input =
-    catch_errors (fun () -> one_of_yaml_exn ?max_depth ?expansion_limit input)
+  let one_of_yaml ?file ?max_depth ?expansion_limit input =
+    catch_errors ?file (fun () ->
+        one_of_yaml_exn ?max_depth ?expansion_limit input)
+
+  let one_of_yaml_file ?max_depth ?expansion_limit path =
+    match
+      try Ok (read_file path) with
+      | Sys_error msg -> Error msg
+    with
+    | Error msg -> Error ("file " ^ path ^ ": " ^ msg)
+    | Ok input -> one_of_yaml ~file:path ?max_depth ?expansion_limit input
 end
 
 (* ------------------------------------------------------------------ *)
