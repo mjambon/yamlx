@@ -21,6 +21,7 @@
  (description "A longer description")
  (depends
   ocaml
+  ppx_deriving
   (testo :with-test))
  (tags
   ("add topics" "to describe" your project)))
