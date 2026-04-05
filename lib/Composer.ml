@@ -48,7 +48,8 @@ let node_height : node -> int = function
     document event). *)
 let rec compose_node (c : t) ~(depth : int) : node =
   let ev = get_ev c in
-  if depth > c.max_depth then raise (Types.Depth_limit_exceeded c.max_depth);
+  if depth > c.max_depth then
+    raise (Types.Error (Types.Depth_limit_exceeded c.max_depth));
   match ev.kind with
   | Alias name -> (
       match Hashtbl.find_opt c.anchors name with
