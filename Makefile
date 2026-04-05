@@ -7,8 +7,7 @@ build:
 
 .PHONY: test
 test:
-	opam exec -- dune build tests/Test_yamlx.exe
-	opam exec -- ./test
+	opam exec -- dune runtest
 
 # Create a local opam switch (= install deps only for this project)
 .PHONY: setup-opam
@@ -19,6 +18,20 @@ setup-opam:
 .PHONY: install-deps
 install-deps:
 	opam install ./yamlx.opam -y --deps-only --with-test --with-doc
+
+# Build odoc HTML documentation and copy it into docs/ (served by GitHub Pages)
+.PHONY: doc
+doc:
+	opam exec -- dune build @doc
+	rm -rf docs/
+	cp -a _build/default/_doc/_html/. docs/
+
+# Fail if running 'make doc' would change any file under docs/.
+# Used by the pre-commit hook and CI to enforce that committed docs are current.
+.PHONY: doc-check
+doc-check:
+	$(MAKE) doc
+	git diff --exit-code docs/
 
 # Remove build products. Keep '_opam/'.
 .PHONY: clean

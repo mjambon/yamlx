@@ -6,3 +6,9 @@ repos:
         language: system
         entry: ocamlformat --inplace
         files: \.(ml|mli)$
+      - id: docs
+        name: docs
+        language: system
+        entry: make doc
+        pass_filenames: false
+        always_run: true

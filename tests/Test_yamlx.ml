@@ -19,17 +19,25 @@
 (* Locate the test-suite source directory                                *)
 (* ------------------------------------------------------------------ *)
 
-(** Absolute path to the yaml-test-suite src directory. We derive it from the
-    location of this file's compilation artifact so the tests can be run from
-    any working directory. *)
-let suite_dir =
-  (* __FILE__ expands to the source path at compile time. *)
-  let here = Filename.dirname __FILE__ in
-  Filename.concat here "yaml-test-suite/src"
+(** Path to the yaml-test-suite src directory, relative to the dune test working
+    directory ({i _build/default/tests/}). The directory is copied there by dune
+    via the [(source_tree yaml-test-suite)] dep in [tests/dune]. *)
+let suite_dir = "yaml-test-suite/src"
 
 (* ------------------------------------------------------------------ *)
 (* Run a single test case                                                *)
 (* ------------------------------------------------------------------ *)
+
+(** Normalize an event tree string for comparison: strip leading/trailing
+    whitespace from each line, drop empty lines, and re-join with ['\n']. This
+    removes the visual indentation used in the yaml-test-suite tree format and
+    makes comparisons platform-independent. *)
+let canonical_tree s =
+  String.split_on_char '\n' s
+  |> List.map String.trim
+  |> List.filter (fun l -> l <> "")
+  |> String.concat "\n"
+  |> fun t -> if t = "" then t else t ^ "\n"
 
 (** Run one yaml-test-suite test case. For success cases: parse the YAML and
     compare the event tree. For failure cases: assert that an error is raised.
@@ -65,17 +73,11 @@ let run_test_case (tc : Suite_loader.test_case) () =
     (* Only compare against the expected tree if one is given *)
     match tc.tree with
     | None -> ()
-    | Some expected_tree -> (
+    | Some expected_tree ->
         let actual_tree = YAMLx.events_to_tree events in
-        match
-          YAMLx.diff_event_trees ~expected:expected_tree ~actual:actual_tree
-        with
-        | None -> () (* trees match *)
-        | Some diff ->
-            failwith
-              (Printf.sprintf
-                 "[%s] %s: event tree mismatch\n  %s\nExpected:\n%s\nGot:\n%s"
-                 tc.id tc.name diff expected_tree actual_tree))
+        Testo.(check text)
+          (canonical_tree expected_tree)
+          (canonical_tree actual_tree)
   end
 
 (* ------------------------------------------------------------------ *)
@@ -84,15 +86,10 @@ let run_test_case (tc : Suite_loader.test_case) () =
 
 (** Basic sanity tests that don't depend on the yaml-test-suite. *)
 let unit_tests () =
-  let check_parse label yaml expected_events () =
+  let check_parse _label yaml expected_events () =
     let events = YAMLx.parse_events yaml in
     let actual = YAMLx.events_to_tree events in
-    match YAMLx.diff_event_trees ~expected:expected_events ~actual with
-    | None -> ()
-    | Some diff ->
-        failwith
-          (Printf.sprintf "%s: %s\nExpected:\n%s\nGot:\n%s" label diff
-             expected_events actual)
+    Testo.(check text) (canonical_tree expected_events) (canonical_tree actual)
   in
   [
     Testo.create "empty stream" (check_parse "empty stream" "" "+STR\n-STR\n");
@@ -176,6 +173,13 @@ let encoding_tests () =
         failwith (label ^ ": unexpected Scan_error message: " ^ msg)
     | _ -> failwith (label ^ ": expected Scan_error for non-UTF-8 BOM")
   in
+  (* Check that [input] produces the same event tree as the LF reference. *)
+  let check_line_ending input () =
+    let reference = "a: 1\nb: 2\n" in
+    let expected = YAMLx.events_to_tree (YAMLx.parse_events reference) in
+    let actual = YAMLx.events_to_tree (YAMLx.parse_events input) in
+    Testo.(check text) (canonical_tree expected) (canonical_tree actual)
+  in
   [
     Testo.create ~category:[ "encoding" ] "UTF-32 BE BOM rejected"
       (check_bom_error "UTF-32 BE" "\x00\x00\xFE\xFF");
@@ -191,6 +195,24 @@ let encoding_tests () =
         match nodes with
         | [ YAMLx.Scalar_node { value = "hello"; _ } ] -> ()
         | _ -> failwith "expected scalar 'hello' after UTF-8 BOM");
+    (* YAML 1.2 §5.4: CR, CRLF, NEL, LS, PS are all line breaks *)
+    Testo.create ~category:[ "encoding" ] "CRLF line endings normalized to LF"
+      (check_line_ending "a: 1\r\nb: 2\r\n");
+    Testo.create ~category:[ "encoding" ]
+      "bare CR line endings normalized to LF"
+      (check_line_ending "a: 1\rb: 2\r");
+    Testo.create ~category:[ "encoding" ]
+      "NEL (U+0085) line endings normalized to LF"
+      (* NEL encoded as UTF-8: C2 85 *)
+      (check_line_ending "a: 1\xC2\x85b: 2\xC2\x85");
+    Testo.create ~category:[ "encoding" ]
+      "LS (U+2028) line endings normalized to LF"
+      (* LS encoded as UTF-8: E2 80 A8 *)
+      (check_line_ending "a: 1\xE2\x80\xA8b: 2\xE2\x80\xA8");
+    Testo.create ~category:[ "encoding" ]
+      "PS (U+2029) line endings normalized to LF"
+      (* PS encoded as UTF-8: E2 80 A9 *)
+      (check_line_ending "a: 1\xE2\x80\xA9b: 2\xE2\x80\xA9");
   ]
 
 (* ------------------------------------------------------------------ *)
@@ -449,20 +471,36 @@ let performance_tests () =
     Testo.create ~category:[ "performance" ]
       "deeply nested flow sequences parse in linear time" (fun () ->
         (* Verify that O(n) nesting does not trigger O(n²) behaviour in the
-           scanner.  We time two depths and check that doubling the depth does
-           not more than quadruple the elapsed time (a 4× headroom accommodates
-           noise while still catching quadratic regression). *)
-        let time n =
+           scanner.  We measure per-iteration time by running until at least
+           [min_total_s] seconds have elapsed; this ensures a reliable
+           baseline even on systems with coarse timers (e.g. Windows where
+           a single sub-millisecond run cannot be measured accurately).
+           Doubling the depth should roughly double the per-iteration time
+           (O(n)); we allow up to 16× headroom before failing. *)
+        let min_total_s = 0.05 in
+        let time_per_iter n =
           let input = String.make n '[' ^ String.make n ']' in
-          let t0 = Unix.gettimeofday () in
+          (* warm-up run to fill caches *)
           (try ignore (YAMLx.Nodes.of_yaml_exn ~max_depth:n input) with
           | _ -> ());
-          Unix.gettimeofday () -. t0
+          (* accumulate until total >= min_total_s *)
+          let total = ref 0.0 in
+          let count = ref 0 in
+          while !total < min_total_s do
+            let t0 = Unix.gettimeofday () in
+            (try ignore (YAMLx.Nodes.of_yaml_exn ~max_depth:n input) with
+            | _ -> ());
+            total := !total +. (Unix.gettimeofday () -. t0);
+            incr count
+          done;
+          !total /. float_of_int !count
         in
-        let t1 = time 4000 in
-        let t2 = time 8000 in
-        (* t2 / t1 should be close to 2 for O(n); allow up to 8× for noise *)
-        if t1 > 0.0 && t2 /. t1 > 8.0 then
+        let t1 = time_per_iter 4000 in
+        let t2 = time_per_iter 8000 in
+        Printf.printf "depth 4000 = %.4fs, depth 8000 = %.4fs (ratio %.1f)\n%!"
+          t1 t2 (t2 /. t1);
+        (* t2 / t1 should be close to 2 for O(n); allow up to 16× for noise *)
+        if t2 /. t1 > 16.0 then
           failwith
             (Printf.sprintf
                "quadratic behaviour detected: depth 4000 = %.4fs, depth 8000 = \
@@ -475,10 +513,8 @@ let performance_tests () =
 (* ------------------------------------------------------------------ *)
 
 let suite_tests () =
-  if not (Sys.file_exists suite_dir) then begin
-    Printf.eprintf "Warning: yaml-test-suite not found at %s\n%!" suite_dir;
-    []
-  end
+  if not (Sys.file_exists suite_dir) then
+    failwith (Printf.sprintf "yaml-test-suite not found at %s" suite_dir)
   else begin
     let cases = Suite_loader.load_dir suite_dir in
     (* Assign a per-id sequence number so that multiple test cases from the

@@ -2,6 +2,8 @@
 
 A pure-OCaml YAML 1.2 library with a lossless, comment-preserving AST.
 
+**[API Documentation](https://mjambon.github.io/yamlx/yamlx/YAMLx/)**
+
 ## Features
 
 - **Full YAML 1.2 compliance** — passes all 371 tests from the
