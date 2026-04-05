@@ -475,10 +475,8 @@ let performance_tests () =
 (* ------------------------------------------------------------------ *)
 
 let suite_tests () =
-  if not (Sys.file_exists suite_dir) then begin
-    Printf.eprintf "Warning: yaml-test-suite not found at %s\n%!" suite_dir;
-    []
-  end
+  if not (Sys.file_exists suite_dir) then
+    failwith (Printf.sprintf "yaml-test-suite not found at %s" suite_dir)
   else begin
     let cases = Suite_loader.load_dir suite_dir in
     (* Assign a per-id sequence number so that multiple test cases from the
