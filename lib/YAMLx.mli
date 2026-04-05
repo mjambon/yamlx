@@ -181,7 +181,7 @@ type node =
     - Everything else, and all quoted or block scalars → {!String}
 
     Each constructor carries a {!loc} giving the source range of the
-    corresponding YAML node. Use {!Values.equal} for location-independent
+    corresponding YAML node. Use {!equal_value} for location-independent
     structural equality. *)
 type value =
   | Null of loc
