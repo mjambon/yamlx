@@ -2,7 +2,12 @@
 
     Typical usage:
     {[
-      (* Parse into typed values — safe variant *)
+      (* Read a config file and get a single typed value — most common pattern *)
+      match YAMLx.Values.one_of_yaml_file "config.yaml" with
+      | Ok value  -> (* process value *)
+      | Error msg -> (* handle error *)
+
+      (* Parse a YAML string into typed values — safe variant *)
       match YAMLx.Values.of_yaml "answer: 42\nflag: true" with
       | Ok docs  -> (* process docs *)
       | Error msg -> (* handle error *)
@@ -10,15 +15,18 @@
       (* Parse into typed values — raising variant *)
       let docs = YAMLx.Values.of_yaml_exn "answer: 42\nflag: true"
 
+      (* Serialize typed values back to YAML *)
+      let yaml = YAMLx.Values.to_yaml docs
+
       (* Parse preserving the full AST (tags, anchors, positions) *)
       let nodes = YAMLx.Nodes.of_yaml_exn "- foo\n- bar"
 
-      (* Serialize back to YAML *)
+      (* Serialize nodes back to YAML *)
       let yaml = YAMLx.Nodes.to_yaml nodes
     ]}
 
-    All errors are reported by raising {!Error}. Use {!Values.of_yaml} to get a
-    [result] instead of raising. *)
+    All errors are reported by raising {!Error}. Use {!Values.of_yaml} or
+    {!Values.one_of_yaml_file} to get a [result] instead of raising. *)
 
 (** {1 Source positions} *)
 
@@ -202,6 +210,11 @@ val node_height : node -> int
 
 (**/**)
 
+(** Operations on the lossless AST node representation.
+
+    Use [Nodes] when you need full fidelity: tags, anchors, scalar styles,
+    source positions, or comment preservation. For plain data extraction and
+    round-tripping typed values, {!Values} is simpler. *)
 module Nodes : sig
   type t = node list
   (** One {!node} per YAML document in the input stream. *)
@@ -230,6 +243,11 @@ module Nodes : sig
       are preserved. The output round-trips through {!of_yaml_exn} to equivalent
       nodes. Does not raise. *)
 
+  val to_yaml_file : t -> string -> unit
+  (** [to_yaml_file nodes path] serializes nodes to YAML (via {!to_yaml}) and
+      writes the result to [path], overwriting any existing file. Raises
+      [Sys_error] on file I/O failure. *)
+
   val to_plain_yaml_exn : ?strict:bool -> ?expansion_limit:int -> t -> string
   (** Like {!to_yaml} but produces a plain subset of YAML:
       - Aliases are expanded; anchor declarations are stripped.
@@ -240,6 +258,13 @@ module Nodes : sig
 
       Raises {!Error} [(Expansion_limit_exceeded _)] when alias expansion
       exceeds [expansion_limit] (default: {!default_expansion_limit}). *)
+
+  val to_plain_yaml_file :
+    ?strict:bool -> ?expansion_limit:int -> t -> string -> unit
+  (** [to_plain_yaml_file nodes path] serializes nodes to plain YAML (via
+      {!to_plain_yaml_exn}) and writes the result to [path], overwriting any
+      existing file. Raises {!Error} on serialization failure and [Sys_error] on
+      file I/O failure. *)
 end
 
 (** {1 Value operations} *)
@@ -256,6 +281,14 @@ val value_height : value -> int
 
 (**/**)
 
+(** Operations on typed YAML values.
+
+    [Values] is the most convenient interface for reading and writing plain YAML
+    data. It resolves YAML scalars to typed OCaml values ({!Null}, {!Bool},
+    {!Int}, {!Float}, {!String}, {!Seq}, {!Map}) using the YAML 1.2 JSON schema,
+    and can serialize those values back to YAML. For round-tripping use
+    {!Values.of_yaml_exn} / {!Values.to_yaml}; for single-document config files
+    use {!Values.one_of_yaml_file}. *)
 module Values : sig
   type t = value list
   (** One {!value} per YAML document in the input stream. *)
@@ -286,6 +319,18 @@ module Values : sig
       [(Expansion_limit_exceeded _)] when alias expansion exceeds
       [expansion_limit] (default: {!default_expansion_limit}). *)
 
+  val of_nodes_exn : ?expansion_limit:int -> node list -> t
+  (** Resolve a list of AST nodes (as produced by {!Nodes.of_yaml_exn}) to typed
+      values. This is the composition of {!Nodes.of_yaml_exn} and
+      {!of_yaml_exn}, exposed for callers that already have nodes.
+
+      Raises {!Error} [(Expansion_limit_exceeded _)] on excessive alias
+      expansion. *)
+
+  val of_nodes : ?expansion_limit:int -> node list -> (t, string) result
+  (** Like {!of_nodes_exn} but returns [Ok values] on success or [Error msg] on
+      failure. Does not raise. *)
+
   val one_of_yaml :
     ?file:string ->
     ?max_depth:int ->
@@ -308,6 +353,21 @@ module Values : sig
       Raises {!Error} [(Document_count_error _)] if the input contains zero or
       more than one document. Raises {!Error} on other failures (same conditions
       as {!of_yaml_exn}). *)
+
+  val to_nodes : t -> node list
+  (** Convert typed values back to AST nodes. Each {!value} becomes one {!node}
+      document. Scalars are given appropriate styles (e.g. strings that look
+      like YAML keywords are double-quoted). Source locations in the returned
+      nodes are zeroed. *)
+
+  val to_yaml : t -> string
+  (** Serialize typed values to a YAML string. Equivalent to
+      [Nodes.to_yaml (to_nodes values)]. Does not raise. *)
+
+  val to_yaml_file : t -> string -> unit
+  (** [to_yaml_file values path] serializes values to YAML (via {!to_yaml}) and
+      writes the result to [path], overwriting any existing file. Raises
+      [Sys_error] on file I/O failure. *)
 end
 
 (**/**)
