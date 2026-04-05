@@ -4,7 +4,7 @@ Thank you for your interest in YAMLx!
 
 ## How this project works
 
-YAMLx is maintained by its author with the help of
+YAMLx is maintained by Martin Jambon with the help of
 [Claude Code](https://claude.ai/code). Because of this workflow,
 **pull requests are generally not accepted** — the bottleneck is not
 writing code but deciding what to build and verifying it is correct.
@@ -16,7 +16,7 @@ The most valuable contribution you can make is a **well-written issue**.
 
 ## Reporting bugs
 
-Please open a [GitHub issue](https://github.com/username/yamlx/issues)
+Please open a [GitHub issue](https://github.com/mjambon/yamlx/issues)
 and include:
 
 - A minimal YAML input that triggers the problem.
