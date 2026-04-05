@@ -362,7 +362,7 @@ let parse_file (file_id : string) (content : string) : test_case list =
 
 (** Read a file as a string. *)
 let read_file (path : string) : string =
-  let ic = open_in path in
+  let ic = open_in_bin path in
   let n = in_channel_length ic in
   let s = Bytes.create n in
   really_input ic s 0 n;
