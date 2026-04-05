@@ -171,6 +171,13 @@ let encoding_tests () =
         failwith (label ^ ": unexpected Scan_error message: " ^ msg)
     | _ -> failwith (label ^ ": expected Scan_error for non-UTF-8 BOM")
   in
+  (* Check that [input] produces the same event tree as the LF reference. *)
+  let check_line_ending input () =
+    let reference = "a: 1\nb: 2\n" in
+    let expected = YAMLx.events_to_tree (YAMLx.parse_events reference) in
+    let actual = YAMLx.events_to_tree (YAMLx.parse_events input) in
+    Testo.(check text) (canonical_tree expected) (canonical_tree actual)
+  in
   [
     Testo.create ~category:[ "encoding" ] "UTF-32 BE BOM rejected"
       (check_bom_error "UTF-32 BE" "\x00\x00\xFE\xFF");
@@ -186,6 +193,23 @@ let encoding_tests () =
         match nodes with
         | [ YAMLx.Scalar_node { value = "hello"; _ } ] -> ()
         | _ -> failwith "expected scalar 'hello' after UTF-8 BOM");
+    (* YAML 1.2 §5.4: CR, CRLF, NEL, LS, PS are all line breaks *)
+    Testo.create ~category:[ "encoding" ] "CRLF line endings normalized to LF"
+      (check_line_ending "a: 1\r\nb: 2\r\n");
+    Testo.create ~category:[ "encoding" ] "bare CR line endings normalized to LF"
+      (check_line_ending "a: 1\rb: 2\r");
+    Testo.create ~category:[ "encoding" ]
+      "NEL (U+0085) line endings normalized to LF"
+      (* NEL encoded as UTF-8: C2 85 *)
+      (check_line_ending "a: 1\xC2\x85b: 2\xC2\x85");
+    Testo.create ~category:[ "encoding" ]
+      "LS (U+2028) line endings normalized to LF"
+      (* LS encoded as UTF-8: E2 80 A8 *)
+      (check_line_ending "a: 1\xE2\x80\xA8b: 2\xE2\x80\xA8");
+    Testo.create ~category:[ "encoding" ]
+      "PS (U+2029) line endings normalized to LF"
+      (* PS encoded as UTF-8: E2 80 A9 *)
+      (check_line_ending "a: 1\xE2\x80\xA9b: 2\xE2\x80\xA9");
   ]
 
 (* ------------------------------------------------------------------ *)
