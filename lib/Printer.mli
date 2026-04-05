@@ -17,17 +17,14 @@ val to_yaml : Types.node list -> string
     [Alias_node] values are emitted as [*name] references; the caller must
     ensure the corresponding anchored node appears earlier in the stream. *)
 
-exception Plain_error of string
-(** Raised by {!to_plain_yaml} when the input uses a feature that plain YAML
-    does not allow. *)
-
 val to_plain_yaml :
   ?strict:bool -> ?expansion_limit:int -> Types.node list -> string
 (** Like {!to_yaml} but restricted to plain YAML: aliases are expanded, anchor
-    declarations are stripped, tags are stripped (or raise {!Plain_error} when
-    [~strict:true]), complex mapping keys always raise {!Plain_error}, and all
-    flow collections are converted to block style.
+    declarations are stripped, tags are stripped (or raise {!Types.Error}
+    [(Plain_error _)] when [~strict:true]), complex mapping keys always raise
+    {!Types.Error} [(Plain_error _)], and all flow collections are converted to
+    block style.
 
     [expansion_limit] caps the total number of nodes visited during alias
-    expansion. Raises {!Types.Expansion_limit_exceeded} if exceeded. Defaults to
-    {!Types.default_expansion_limit}. *)
+    expansion. Raises {!Types.Error} [(Expansion_limit_exceeded _)] if exceeded.
+    Defaults to {!Types.default_expansion_limit}. *)

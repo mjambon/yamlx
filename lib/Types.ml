@@ -33,18 +33,31 @@ type loc = { start_pos : pos; end_pos : pos }
 
 type yaml_error = { msg : string; pos : pos }
 
-exception Scan_error of yaml_error
-exception Parse_error of yaml_error
+type error =
+  | Scan_error of yaml_error
+      (** Invalid character sequence or encoding error detected by the scanner.
+          Carries a position. *)
+  | Parse_error of yaml_error
+      (** Well-formed tokens in an invalid order detected by the parser. Carries
+          a position. *)
+  | Expansion_limit_exceeded of int
+      (** Alias expansion visited more nodes than the configured limit. The
+          payload is the limit that was exceeded. See
+          {!default_expansion_limit}. *)
+  | Depth_limit_exceeded of int
+      (** YAML nesting depth exceeded the configured maximum during composition.
+          The payload is the limit that was exceeded. See {!default_max_depth}.
+      *)
+  | Plain_error of string
+      (** A feature unsupported by the plain-YAML printer was encountered (e.g.
+          a tag, a complex mapping key). *)
+  | Document_count_error of string
+      (** The input contained the wrong number of documents for a
+          single-document operation. *)
 
-exception Expansion_limit_exceeded of int
-(** Raised when alias expansion visits more than the configured number of nodes.
-    The payload is the limit that was exceeded. See {!default_expansion_limit}.
-*)
-
-exception Depth_limit_exceeded of int
-(** Raised when the YAML nesting depth during composition exceeds the configured
-    maximum. The payload is the limit that was exceeded. See
-    {!default_max_depth}. *)
+exception Error of error
+(** The single exception raised by this library. Match on the payload to
+    distinguish error kinds. *)
 
 (** Default maximum number of nodes that may be visited during alias expansion.
     Applies to both {!Resolver.resolve_documents} and {!Printer.to_plain_yaml}.
@@ -52,14 +65,14 @@ exception Depth_limit_exceeded of int
 let default_expansion_limit = 1_000_000
 
 (** Default maximum nesting depth accepted during composition. Inputs deeper
-    than this raise {!Depth_limit_exceeded}. *)
+    than this raise {!Error (Depth_limit_exceeded _)}. *)
 let default_max_depth = 512
 
 let scan_error pos fmt =
-  Printf.ksprintf (fun msg -> raise (Scan_error { msg; pos })) fmt
+  Printf.ksprintf (fun msg -> raise (Error (Scan_error { msg; pos }))) fmt
 
 let parse_error pos fmt =
-  Printf.ksprintf (fun msg -> raise (Parse_error { msg; pos })) fmt
+  Printf.ksprintf (fun msg -> raise (Error (Parse_error { msg; pos }))) fmt
 
 (** {1 Scalar styles} *)
 

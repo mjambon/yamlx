@@ -38,8 +38,8 @@ let run_test_case (tc : Suite_loader.test_case) () =
   if tc.fail then
     (* Expect a scan or parse error *)
     begin match YAMLx.parse_events tc.yaml with
-    | exception YAMLx.Scan_error _ -> () (* expected *)
-    | exception YAMLx.Parse_error _ -> () (* expected *)
+    | exception YAMLx.Error (YAMLx.Scan_error _) -> () (* expected *)
+    | exception YAMLx.Error (YAMLx.Parse_error _) -> () (* expected *)
     | _ ->
         failwith
           (Printf.sprintf
@@ -50,12 +50,12 @@ let run_test_case (tc : Suite_loader.test_case) () =
     (* Parse must succeed *)
     let events =
       match YAMLx.parse_events tc.yaml with
-      | exception YAMLx.Scan_error e ->
+      | exception YAMLx.Error (YAMLx.Scan_error e) ->
           failwith
             (Printf.sprintf
                "[%s] %s: unexpected scan error at line %d col %d: %s" tc.id
                tc.name e.pos.line e.pos.column e.msg)
-      | exception YAMLx.Parse_error e ->
+      | exception YAMLx.Error (YAMLx.Parse_error e) ->
           failwith
             (Printf.sprintf
                "[%s] %s: unexpected parse error at line %d col %d: %s" tc.id
@@ -169,10 +169,10 @@ let unit_tests () =
 let encoding_tests () =
   let check_bom_error label input () =
     match YAMLx.Nodes.of_yaml_exn input with
-    | exception YAMLx.Scan_error { msg; _ }
+    | exception YAMLx.Error (YAMLx.Scan_error { msg; _ })
       when String.length msg > 6 && String.sub msg 0 6 = "input " ->
         ()
-    | exception YAMLx.Scan_error { msg; _ } ->
+    | exception YAMLx.Error (YAMLx.Scan_error { msg; _ }) ->
         failwith (label ^ ": unexpected Scan_error message: " ^ msg)
     | _ -> failwith (label ^ ": expected Scan_error for non-UTF-8 BOM")
   in
@@ -344,7 +344,7 @@ let expansion_limit_tests () =
     Testo.create ~category:[ "expansion-limit" ]
       "YAML bomb raises Expansion_limit_exceeded via of_string" (fun () ->
         match YAMLx.Values.of_yaml_exn yaml_bomb with
-        | exception YAMLx.Expansion_limit_exceeded n ->
+        | exception YAMLx.Error (YAMLx.Expansion_limit_exceeded n) ->
             (* limit payload should equal the configured default *)
             assert (n = YAMLx.default_expansion_limit)
         | _ -> failwith "expected Expansion_limit_exceeded");
@@ -352,7 +352,7 @@ let expansion_limit_tests () =
       "YAML bomb raises Expansion_limit_exceeded via to_plain_yaml" (fun () ->
         let nodes = YAMLx.Nodes.of_yaml_exn yaml_bomb in
         match YAMLx.Nodes.to_plain_yaml_exn nodes with
-        | exception YAMLx.Expansion_limit_exceeded _ -> ()
+        | exception YAMLx.Error (YAMLx.Expansion_limit_exceeded _) -> ()
         | _ -> failwith "expected Expansion_limit_exceeded");
     Testo.create ~category:[ "expansion-limit" ]
       "YAML bomb is Error via of_string_result" (fun () ->
@@ -365,7 +365,7 @@ let expansion_limit_tests () =
         (* Even a tiny document with aliases must respect a limit of 1. *)
         let input = "x: &x foo\ny: *x\n" in
         match YAMLx.Values.of_yaml_exn ~expansion_limit:1 input with
-        | exception YAMLx.Expansion_limit_exceeded 1 -> ()
+        | exception YAMLx.Error (YAMLx.Expansion_limit_exceeded 1) -> ()
         | _ -> failwith "expected Expansion_limit_exceeded 1");
     Testo.create ~category:[ "expansion-limit" ]
       "normal aliases within default limit succeed" (fun () ->
@@ -396,7 +396,7 @@ let depth_limit_tests () =
         let n = YAMLx.default_max_depth + 1 in
         let input = String.make n '[' ^ String.make n ']' in
         match YAMLx.Nodes.of_yaml_exn input with
-        | exception YAMLx.Depth_limit_exceeded lim ->
+        | exception YAMLx.Error (YAMLx.Depth_limit_exceeded lim) ->
             assert (lim = YAMLx.default_max_depth)
         | _ -> failwith "expected Depth_limit_exceeded");
     Testo.create ~category:[ "depth-limit" ]
@@ -404,7 +404,7 @@ let depth_limit_tests () =
         let n = YAMLx.default_max_depth + 1 in
         let input = String.make n '[' ^ String.make n ']' in
         match YAMLx.Values.of_yaml_exn input with
-        | exception YAMLx.Depth_limit_exceeded _ -> ()
+        | exception YAMLx.Error (YAMLx.Depth_limit_exceeded _) -> ()
         | _ -> failwith "expected Depth_limit_exceeded");
     Testo.create ~category:[ "depth-limit" ]
       "depth limit is Error via of_string_result" (fun () ->
@@ -419,7 +419,7 @@ let depth_limit_tests () =
     Testo.create ~category:[ "depth-limit" ] "custom low limit is respected"
       (fun () ->
         match YAMLx.Nodes.of_yaml_exn ~max_depth:2 "[[a]]" with
-        | exception YAMLx.Depth_limit_exceeded 2 -> ()
+        | exception YAMLx.Error (YAMLx.Depth_limit_exceeded 2) -> ()
         | _ -> failwith "expected Depth_limit_exceeded 2");
     Testo.create ~category:[ "depth-limit" ]
       "input exactly at the limit is accepted" (fun () ->

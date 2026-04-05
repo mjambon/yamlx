@@ -33,16 +33,15 @@ type loc = { start_pos : pos; end_pos : pos }
 
 type yaml_error = { msg : string; pos : pos }
 
-exception Scan_error of yaml_error
-exception Parse_error of yaml_error
+type error =
+  | Scan_error of yaml_error
+  | Parse_error of yaml_error
+  | Expansion_limit_exceeded of int
+  | Depth_limit_exceeded of int
+  | Plain_error of string
+  | Document_count_error of string
 
-exception Expansion_limit_exceeded of int
-(** Raised when alias expansion visits more than the configured number of nodes.
-    The payload is the limit that was exceeded. *)
-
-exception Depth_limit_exceeded of int
-(** Raised when the YAML nesting depth during composition exceeds the configured
-    maximum. The payload is the limit that was exceeded. *)
+exception Error of error
 
 val default_expansion_limit : int
 (** Default node-visit budget for alias expansion (1,000,000). *)

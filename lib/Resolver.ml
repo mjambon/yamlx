@@ -144,11 +144,12 @@ let resolve_scalar ~(loc : Types.loc) ~(explicit_tag : string option)
 (* Full node resolution                                                  *)
 (* ------------------------------------------------------------------ *)
 
-(** Increment [counter] and raise {!Types.Expansion_limit_exceeded} if it
-    exceeds [limit]. *)
+(** Increment [counter] and raise {!Types.Error} [(Expansion_limit_exceeded _)]
+    if it exceeds [limit]. *)
 let tick ~limit ~counter =
   incr counter;
-  if !counter > limit then raise (Types.Expansion_limit_exceeded limit)
+  if !counter > limit then
+    raise (Types.Error (Types.Expansion_limit_exceeded limit))
 
 (** Extract the [loc] from any node variant. *)
 let node_loc : Types.node -> Types.loc = function

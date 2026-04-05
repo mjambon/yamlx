@@ -17,10 +17,8 @@
       let yaml = YAMLx.Nodes.to_yaml nodes
     ]}
 
-    Scan and parse errors are reported by raising {!Scan_error} or
-    {!Parse_error}. Depth and expansion limits raise {!Depth_limit_exceeded} or
-    {!Expansion_limit_exceeded}. Use {!Values.of_yaml} to get a [result] instead
-    of raising. *)
+    All errors are reported by raising {!Error}. Use {!Values.of_yaml} to get a
+    [result] instead of raising. *)
 
 (** {1 Source positions} *)
 
@@ -47,41 +45,49 @@ type loc = { start_pos : pos; end_pos : pos } [@@deriving show]
 
 type yaml_error = { msg : string; pos : pos }
 
-exception Scan_error of yaml_error
-(** Raised when the input contains invalid YAML syntax at the scanning
-    (tokenization) stage. *)
+type error =
+  | Scan_error of yaml_error
+      (** Invalid character sequence or encoding error detected by the scanner.
+          Carries a position. *)
+  | Parse_error of yaml_error
+      (** Well-formed tokens in an invalid order detected by the parser. Carries
+          a position. *)
+  | Expansion_limit_exceeded of int
+      (** Alias expansion visited more nodes than the configured limit. The
+          payload is the limit that was exceeded. See
+          {!default_expansion_limit}. *)
+  | Depth_limit_exceeded of int
+      (** YAML nesting depth exceeded the configured maximum during composition.
+          The payload is the limit that was exceeded. See {!default_max_depth}.
+      *)
+  | Plain_error of string
+      (** A feature unsupported by the plain-YAML printer was encountered (e.g.
+          a tag, a complex mapping key). *)
+  | Document_count_error of string
+      (** The input contained the wrong number of documents for a
+          single-document operation. *)
 
-exception Parse_error of yaml_error
-(** Raised when the token stream does not conform to the YAML grammar. *)
-
-exception Expansion_limit_exceeded of int
-(** Raised when alias expansion visits more nodes than allowed by
-    [~expansion_limit]. The payload is the limit that was exceeded. See
-    {!default_expansion_limit}. *)
-
-exception Depth_limit_exceeded of int
-(** Raised when the YAML nesting depth exceeds [~max_depth] during parsing. The
-    payload is the limit that was exceeded. See {!default_max_depth}. *)
-
-exception Plain_error of string
-(** Raised by {!Nodes.to_plain_yaml_exn} when the input uses a feature that
-    plain YAML does not support: an explicit tag or a complex mapping key. *)
-
-exception Document_count_error of string
-(** Raised by {!Values.one_of_yaml_exn} when the input contains a number of
-    documents that does not match expectations (zero or more than one). The
-    payload is a human-readable description of the mismatch. *)
+exception Error of error
+(** The single exception raised by this library. Match on the payload to
+    distinguish error kinds:
+    {[
+      match YAMLx.Nodes.of_yaml_exn input with
+      | nodes -> ...
+      | exception YAMLx.Error (YAMLx.Scan_error e) -> ...
+      | exception YAMLx.Error (YAMLx.Parse_error e) -> ...
+      | exception YAMLx.Error (YAMLx.Depth_limit_exceeded n) -> ...
+      | exception YAMLx.Error _ -> ...
+    ]} *)
 
 val catch_errors : ?file:string -> (unit -> 'a) -> ('a, string) result
-(** Catch the exceptions exposed by this module and return [Ok _] or
-    [Error msg]. When [~file] is given it is prepended to every error message:
-    positional errors (scan/parse) become
+(** Catch {!Error} and return [Ok _] or [Error msg]. When [~file] is given it is
+    prepended to every error message: positional errors (scan/parse) become
     ["file foo.yaml, line L, column C: msg"] and non-positional errors become
     ["file foo.yaml: msg"]. *)
 
 val register_exception_printers : unit -> unit
-(** Register nice exception printers for the exceptions exposed by this module.
-*)
+(** Register a printer for {!Error} so it displays legibly in uncaught-exception
+    output. *)
 
 val default_expansion_limit : int
 (** Default node-visit budget for alias expansion (1,000,000). *)
@@ -215,8 +221,8 @@ module Nodes : sig
       need tags, anchors, scalar styles, source positions, or comments. For
       plain data extraction prefer {!Values.of_yaml_exn}.
 
-      Raises {!Scan_error} on invalid YAML syntax. Raises {!Parse_error} on a
-      malformed token stream. Raises {!Depth_limit_exceeded} when nesting
+      Raises {!Error} [(Scan_error _)] on invalid YAML syntax, [(Parse_error _)]
+      on a malformed token stream, [(Depth_limit_exceeded _)] when nesting
       exceeds [max_depth] (default: {!default_max_depth}). *)
 
   val to_yaml : t -> string
@@ -228,13 +234,12 @@ module Nodes : sig
   (** Like {!to_yaml} but produces a plain subset of YAML:
       - Aliases are expanded; anchor declarations are stripped.
       - Tags are stripped unless [~strict:true], in which case they raise
-        {!Plain_error}.
-      - Complex (non-scalar) mapping keys raise {!Plain_error}.
+        {!Error} [(Plain_error _)].
+      - Complex (non-scalar) mapping keys raise {!Error} [(Plain_error _)].
       - Flow collections are converted to block style.
 
-      Raises {!Plain_error} on unsupported features (see above). Raises
-      {!Expansion_limit_exceeded} when alias expansion exceeds [expansion_limit]
-      (default: {!default_expansion_limit}). *)
+      Raises {!Error} [(Expansion_limit_exceeded _)] when alias expansion
+      exceeds [expansion_limit] (default: {!default_expansion_limit}). *)
 end
 
 (** {1 Value operations} *)
@@ -275,11 +280,11 @@ module Values : sig
   val of_yaml_exn : ?max_depth:int -> ?expansion_limit:int -> string -> t
   (** Like {!of_yaml} but raises instead of returning a result.
 
-      Raises {!Scan_error} on invalid YAML syntax. Raises {!Parse_error} on a
-      malformed token stream. Raises {!Depth_limit_exceeded} when nesting
-      exceeds [max_depth] (default: {!default_max_depth}). Raises
-      {!Expansion_limit_exceeded} when alias expansion exceeds [expansion_limit]
-      (default: {!default_expansion_limit}). *)
+      Raises {!Error} [(Scan_error _)] on invalid YAML syntax, [(Parse_error _)]
+      on a malformed token stream, [(Depth_limit_exceeded _)] when nesting
+      exceeds [max_depth] (default: {!default_max_depth}),
+      [(Expansion_limit_exceeded _)] when alias expansion exceeds
+      [expansion_limit] (default: {!default_expansion_limit}). *)
 
   val one_of_yaml :
     ?file:string ->
@@ -300,12 +305,9 @@ module Values : sig
   val one_of_yaml_exn :
     ?max_depth:int -> ?expansion_limit:int -> string -> value
   (** Parse a YAML string expecting exactly one document and return its value.
-      Raises {!Document_count_error} if the input contains zero or more than one
-      document.
-
-      Raises {!Scan_error}, {!Parse_error}, {!Depth_limit_exceeded}, or
-      {!Expansion_limit_exceeded} on errors (same conditions as {!of_yaml_exn}).
-  *)
+      Raises {!Error} [(Document_count_error _)] if the input contains zero or
+      more than one document. Raises {!Error} on other failures (same conditions
+      as {!of_yaml_exn}). *)
 end
 
 (**/**)

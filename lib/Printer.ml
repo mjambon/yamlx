@@ -340,20 +340,21 @@ and map_pair ~level key value =
 (* Plain normalization                                                   *)
 (* ------------------------------------------------------------------ *)
 
-exception Plain_error of string
-(** Raised by {!to_plain_yaml} when the input contains a feature that plain YAML
-    does not allow: an explicit tag or a complex mapping key. *)
+let plain_error fmt =
+  Printf.ksprintf (fun msg -> raise (Types.Error (Types.Plain_error msg))) fmt
 
 (** Normalize a node for plain-YAML output:
     - Expand aliases (substitute the resolved node recursively).
     - Strip all anchor declarations.
-    - If [strict], raise [Plain_error] on any explicit tag; otherwise strip the
-      tag silently.
-    - Raise [Plain_error] on any complex (non-scalar) mapping key.
+    - If [strict], raise {!Types.Error} [(Plain_error _)] on any explicit tag;
+      otherwise strip the tag silently.
+    - Raise {!Types.Error} [(Plain_error _)] on any complex (non-scalar) mapping
+      key.
     - Convert all flow collections to block style. *)
 let tick ~limit ~counter =
   incr counter;
-  if !counter > limit then raise (Types.Expansion_limit_exceeded limit)
+  if !counter > limit then
+    raise (Types.Error (Types.Expansion_limit_exceeded limit))
 
 let rec normalize_plain ~strict ~limit ~counter node =
   tick ~limit ~counter;
@@ -361,14 +362,10 @@ let rec normalize_plain ~strict ~limit ~counter node =
   | Alias_node { resolved; _ } ->
       normalize_plain ~strict ~limit ~counter resolved
   | Scalar_node { tag = Some t; _ } when strict ->
-      raise
-        (Plain_error
-           (Printf.sprintf "tags are not allowed in plain YAML (tag: %s)" t))
+      plain_error "tags are not allowed in plain YAML (tag: %s)" t
   | Scalar_node r -> Scalar_node { r with anchor = None; tag = None }
   | Sequence_node { tag = Some t; _ } when strict ->
-      raise
-        (Plain_error
-           (Printf.sprintf "tags are not allowed in plain YAML (tag: %s)" t))
+      plain_error "tags are not allowed in plain YAML (tag: %s)" t
   | Sequence_node r ->
       Sequence_node
         {
@@ -379,9 +376,7 @@ let rec normalize_plain ~strict ~limit ~counter node =
           items = List_ext.map (normalize_plain ~strict ~limit ~counter) r.items;
         }
   | Mapping_node { tag = Some t; _ } when strict ->
-      raise
-        (Plain_error
-           (Printf.sprintf "tags are not allowed in plain YAML (tag: %s)" t))
+      plain_error "tags are not allowed in plain YAML (tag: %s)" t
   | Mapping_node r ->
       let pairs =
         List_ext.map
@@ -390,9 +385,7 @@ let rec normalize_plain ~strict ~limit ~counter node =
             (match k' with
             | Sequence_node _
             | Mapping_node _ ->
-                raise
-                  (Plain_error
-                     "complex mapping keys are not allowed in plain YAML")
+                plain_error "complex mapping keys are not allowed in plain YAML"
             | _ -> ());
             (k', normalize_plain ~strict ~limit ~counter v))
           r.pairs
@@ -434,9 +427,10 @@ let to_yaml (docs : node list) : string =
   Buffer.contents b
 
 (** Like {!to_yaml} but restricted to plain YAML: aliases are expanded, anchor
-    declarations are stripped, tags are stripped (or raise {!Plain_error} when
-    [strict = true]), complex mapping keys raise {!Plain_error}, and all flow
-    collections are converted to block style. *)
+    declarations are stripped, tags are stripped (or raise {!Types.Error}
+    [(Plain_error _)] when [strict = true]), complex mapping keys raise
+    {!Types.Error} [(Plain_error _)], and all flow collections are converted to
+    block style. *)
 let to_plain_yaml ?(strict = false)
     ?(expansion_limit = Types.default_expansion_limit) (docs : node list) :
     string =

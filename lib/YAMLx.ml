@@ -22,9 +22,7 @@ type loc = Types.loc = { start_pos : pos; end_pos : pos }
 [@@deriving show { with_path = false }]
 
 type yaml_error = Types.yaml_error = { msg : string; pos : pos }
-
-exception Scan_error = Types.Scan_error
-exception Parse_error = Types.Parse_error
+[@@deriving show { with_path = false }]
 
 type scalar_style = Types.scalar_style =
   | Plain
@@ -193,10 +191,16 @@ let parse_nodes ?(max_depth = Types.default_max_depth) (input : string) :
 (* Public API — exceptions and defaults                                  *)
 (* ------------------------------------------------------------------ *)
 
-exception Expansion_limit_exceeded = Types.Expansion_limit_exceeded
-exception Depth_limit_exceeded = Types.Depth_limit_exceeded
-exception Plain_error = Printer.Plain_error
-exception Document_count_error of string
+type error = Types.error =
+  | Scan_error of yaml_error
+  | Parse_error of yaml_error
+  | Expansion_limit_exceeded of int
+  | Depth_limit_exceeded of int
+  | Plain_error of string
+  | Document_count_error of string
+[@@deriving show { with_path = false }]
+
+exception Error = Types.Error
 
 let default_expansion_limit = Types.default_expansion_limit
 let default_max_depth = Types.default_max_depth
@@ -230,27 +234,32 @@ let catch_errors ?file f =
     | Some path -> "file " ^ path ^ ": " ^ msg
   in
   try Ok (f ()) with
-  | Scan_error e -> Error (pos_error "scan error: " e)
-  | Parse_error e -> Error (pos_error "parse error: " e)
-  | Expansion_limit_exceeded n ->
-      Error
+  | Error (Scan_error e) -> Result.Error (pos_error "scan error: " e)
+  | Error (Parse_error e) -> Result.Error (pos_error "parse error: " e)
+  | Error (Expansion_limit_exceeded n) ->
+      Result.Error
         (other_error (Printf.sprintf "expansion limit exceeded (%d nodes)" n))
-  | Depth_limit_exceeded n ->
-      Error (other_error (Printf.sprintf "depth limit exceeded (%d levels)" n))
-  | Plain_error msg -> Error (other_error ("plain error: " ^ msg))
-  | Document_count_error msg ->
-      Error (other_error ("document count error: " ^ msg))
+  | Error (Depth_limit_exceeded n) ->
+      Result.Error
+        (other_error (Printf.sprintf "depth limit exceeded (%d levels)" n))
+  | Error (Plain_error msg) ->
+      Result.Error (other_error ("plain error: " ^ msg))
+  | Error (Document_count_error msg) ->
+      Result.Error (other_error ("document count error: " ^ msg))
 
 let register_exception_printers () =
   Printexc.register_printer (function
-    | Scan_error e -> Some ("YAMLx.Scan_error: " ^ string_of_error e)
-    | Parse_error e -> Some ("YAMLx.Parse_error: " ^ string_of_error e)
-    | Expansion_limit_exceeded n ->
-        Some (Printf.sprintf "YAMLx.Expansion_limit_exceeded (%d)" n)
-    | Depth_limit_exceeded n ->
-        Some (Printf.sprintf "YAMLx.Depth_limit_exceeded (%d)" n)
-    | Plain_error msg -> Some ("YAMLx.Plain_error: " ^ msg)
-    | Document_count_error msg -> Some ("YAMLx.Document_count_error: " ^ msg)
+    | Error (Scan_error e) ->
+        Some ("YAMLx.Error (Scan_error): " ^ string_of_error e)
+    | Error (Parse_error e) ->
+        Some ("YAMLx.Error (Parse_error): " ^ string_of_error e)
+    | Error (Expansion_limit_exceeded n) ->
+        Some (Printf.sprintf "YAMLx.Error (Expansion_limit_exceeded %d)" n)
+    | Error (Depth_limit_exceeded n) ->
+        Some (Printf.sprintf "YAMLx.Error (Depth_limit_exceeded %d)" n)
+    | Error (Plain_error msg) -> Some ("YAMLx.Error (Plain_error): " ^ msg)
+    | Error (Document_count_error msg) ->
+        Some ("YAMLx.Error (Document_count_error): " ^ msg)
     | _ -> None)
 
 (* ------------------------------------------------------------------ *)
@@ -268,9 +277,9 @@ module Nodes = struct
   let of_yaml_file ?max_depth path =
     match
       try Ok (read_file path) with
-      | Sys_error msg -> Error msg
+      | Sys_error msg -> Result.Error msg
     with
-    | Error msg -> Error ("file " ^ path ^ ": " ^ msg)
+    | Result.Error msg -> Result.Error ("file " ^ path ^ ": " ^ msg)
     | Ok input -> of_yaml ~file:path ?max_depth input
 
   let to_yaml = Printer.to_yaml
@@ -294,16 +303,17 @@ module Values = struct
   let of_yaml_file ?max_depth ?expansion_limit path =
     match
       try Ok (read_file path) with
-      | Sys_error msg -> Error msg
+      | Sys_error msg -> Result.Error msg
     with
-    | Error msg -> Error ("file " ^ path ^ ": " ^ msg)
+    | Result.Error msg -> Result.Error ("file " ^ path ^ ": " ^ msg)
     | Ok input -> of_yaml ~file:path ?max_depth ?expansion_limit input
 
   let one_of_yaml_exn ?max_depth ?expansion_limit input =
     match of_yaml_exn ?max_depth ?expansion_limit input with
-    | [] -> raise (Document_count_error "no document in input")
+    | [] -> raise (Error (Document_count_error "no document in input"))
     | [ v ] -> v
-    | _ :: _ :: _ -> raise (Document_count_error "multiple documents in input")
+    | _ :: _ :: _ ->
+        raise (Error (Document_count_error "multiple documents in input"))
 
   let one_of_yaml ?file ?max_depth ?expansion_limit input =
     catch_errors ?file (fun () ->
@@ -312,9 +322,9 @@ module Values = struct
   let one_of_yaml_file ?max_depth ?expansion_limit path =
     match
       try Ok (read_file path) with
-      | Sys_error msg -> Error msg
+      | Sys_error msg -> Result.Error msg
     with
-    | Error msg -> Error ("file " ^ path ^ ": " ^ msg)
+    | Result.Error msg -> Result.Error ("file " ^ path ^ ": " ^ msg)
     | Ok input -> one_of_yaml ~file:path ?max_depth ?expansion_limit input
 end
 
