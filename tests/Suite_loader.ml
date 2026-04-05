@@ -367,7 +367,24 @@ let read_file (path : string) : string =
   let s = Bytes.create n in
   really_input ic s 0 n;
   close_in ic;
-  Bytes.to_string s
+  (* Normalize CRLF → LF so that the line-based parser sees plain \n on
+     every platform.  Without this, blank lines inside block scalars come
+     out as "\r" instead of "" on Windows, which breaks the block-scalar
+     accumulation logic. *)
+  let raw = Bytes.to_string s in
+  let buf = Buffer.create n in
+  let i = ref 0 in
+  while !i < n do
+    if raw.[!i] = '\r' && !i + 1 < n && raw.[!i + 1] = '\n' then begin
+      Buffer.add_char buf '\n';
+      i := !i + 2
+    end
+    else begin
+      Buffer.add_char buf raw.[!i];
+      incr i
+    end
+  done;
+  Buffer.contents buf
 
 (** Load all test cases from a single [.yaml] file. [path] must be the full file
     path; the file stem is used as the test id. *)
