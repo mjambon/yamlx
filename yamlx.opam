@@ -8,7 +8,7 @@ YAMLx is a pure-OCaml YAML 1.2 library. It passes all 371 tests from the yaml-te
 YAMLx is currently released under the AGPL. A commercial license and a path to a fully permissive ISC license are available — see FUNDING.md."""
 maintainer: ["Martin Jambon <martin@mjambon.com>"]
 authors: ["Martin Jambon <martin@mjambon.com>"]
-license: "LICENSE"
+license: "AGPL-3.0-only"
 tags: ["yaml" "parser" "serialization"]
 homepage: "https://github.com/mjambon/yamlx"
 doc: "https://mjambon.github.io/yamlx"

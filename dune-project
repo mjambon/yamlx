@@ -11,7 +11,7 @@
 
 (maintainers "Martin Jambon <martin@mjambon.com>")
 
-(license LICENSE)
+(license AGPL-3.0-only)
 
 (documentation https://mjambon.github.io/yamlx)
 
