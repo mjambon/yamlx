@@ -471,34 +471,36 @@ let performance_tests () =
     Testo.create ~category:[ "performance" ]
       "deeply nested flow sequences parse in linear time" (fun () ->
         (* Verify that O(n) nesting does not trigger O(n²) behaviour in the
-           scanner.  We warm up first, then time each depth three times and
-           take the minimum to reduce CI scheduling noise.  Doubling the depth
-           should roughly double the time (O(n)); we allow up to 16× headroom
-           before failing so that the test is reliable under load while still
-           catching genuine quadratic regressions. *)
-        let time_min n =
+           scanner.  We measure per-iteration time by running until at least
+           [min_total_s] seconds have elapsed; this ensures a reliable
+           baseline even on systems with coarse timers (e.g. Windows where
+           a single sub-millisecond run cannot be measured accurately).
+           Doubling the depth should roughly double the per-iteration time
+           (O(n)); we allow up to 16× headroom before failing. *)
+        let min_total_s = 0.05 in
+        let time_per_iter n =
           let input = String.make n '[' ^ String.make n ']' in
-          (* warm-up run *)
+          (* warm-up run to fill caches *)
           (try ignore (YAMLx.Nodes.of_yaml_exn ~max_depth:n input) with
           | _ -> ());
-          (* three timed runs; take the minimum *)
-          let best = ref max_float in
-          for _ = 1 to 3 do
+          (* accumulate until total >= min_total_s *)
+          let total = ref 0.0 in
+          let count = ref 0 in
+          while !total < min_total_s do
             let t0 = Unix.gettimeofday () in
             (try ignore (YAMLx.Nodes.of_yaml_exn ~max_depth:n input) with
             | _ -> ());
-            let elapsed = Unix.gettimeofday () -. t0 in
-            if elapsed < !best then best := elapsed
+            total := !total +. (Unix.gettimeofday () -. t0);
+            incr count
           done;
-          !best
+          !total /. float_of_int !count
         in
-        let t1 = time_min 4000 in
-        let t2 = time_min 8000 in
+        let t1 = time_per_iter 4000 in
+        let t2 = time_per_iter 8000 in
         Printf.printf "depth 4000 = %.4fs, depth 8000 = %.4fs (ratio %.1f)\n%!"
-          t1 t2
-          (if t1 > 0.0 then t2 /. t1 else 0.0);
+          t1 t2 (t2 /. t1);
         (* t2 / t1 should be close to 2 for O(n); allow up to 16× for noise *)
-        if t1 > 0.0 && t2 /. t1 > 16.0 then
+        if t2 /. t1 > 16.0 then
           failwith
             (Printf.sprintf
                "quadratic behaviour detected: depth 4000 = %.4fs, depth 8000 = \
