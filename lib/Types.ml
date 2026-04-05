@@ -106,8 +106,8 @@ type token_kind =
   | Block_end
       (** Synthetic: emitted when indentation decreases, closing one or more
           block collections. *)
-  | Flow_sequence_start  (** [ *)
-  | Flow_sequence_end  (** ] *)
+  | Flow_sequence_start  (** \[ *)
+  | Flow_sequence_end  (** \] *)
   | Flow_mapping_start  (** { *)
   | Flow_mapping_end  (** } *)
   | Block_entry  (** [-] followed by whitespace or newline *)
