@@ -19,22 +19,19 @@
 (* Locate the test-suite source directory                                *)
 (* ------------------------------------------------------------------ *)
 
-(** Path to the yaml-test-suite src directory, relative to the dune test
-    working directory ({i _build/default/tests/}). The directory is copied
-    there by dune via the [(source_tree yaml-test-suite)] dep in [tests/dune]. *)
+(** Path to the yaml-test-suite src directory, relative to the dune test working
+    directory ({i _build/default/tests/}). The directory is copied there by dune
+    via the [(source_tree yaml-test-suite)] dep in [tests/dune]. *)
 let suite_dir = "yaml-test-suite/src"
 
 (* ------------------------------------------------------------------ *)
 (* Run a single test case                                                *)
 (* ------------------------------------------------------------------ *)
 
-(** Run one yaml-test-suite test case. For success cases: parse the YAML and
-    compare the event tree. For failure cases: assert that an error is raised.
-*)
-(** Normalise an event tree string for comparison: strip leading/trailing
-    whitespace from each line, drop empty lines, and re-join with ['\n'].
-    This removes the visual indentation used in the yaml-test-suite tree
-    format and makes comparisons platform-independent. *)
+(** Normalize an event tree string for comparison: strip leading/trailing
+    whitespace from each line, drop empty lines, and re-join with ['\n']. This
+    removes the visual indentation used in the yaml-test-suite tree format and
+    makes comparisons platform-independent. *)
 let canonical_tree s =
   String.split_on_char '\n' s
   |> List.map String.trim
@@ -42,6 +39,9 @@ let canonical_tree s =
   |> String.concat "\n"
   |> fun t -> if t = "" then t else t ^ "\n"
 
+(** Run one yaml-test-suite test case. For success cases: parse the YAML and
+    compare the event tree. For failure cases: assert that an error is raised.
+*)
 let run_test_case (tc : Suite_loader.test_case) () =
   if tc.fail then
     (* Expect a scan or parse error *)
@@ -75,7 +75,9 @@ let run_test_case (tc : Suite_loader.test_case) () =
     | None -> ()
     | Some expected_tree ->
         let actual_tree = YAMLx.events_to_tree events in
-        Testo.(check text) (canonical_tree expected_tree) (canonical_tree actual_tree)
+        Testo.(check text)
+          (canonical_tree expected_tree)
+          (canonical_tree actual_tree)
   end
 
 (* ------------------------------------------------------------------ *)
@@ -196,7 +198,8 @@ let encoding_tests () =
     (* YAML 1.2 §5.4: CR, CRLF, NEL, LS, PS are all line breaks *)
     Testo.create ~category:[ "encoding" ] "CRLF line endings normalized to LF"
       (check_line_ending "a: 1\r\nb: 2\r\n");
-    Testo.create ~category:[ "encoding" ] "bare CR line endings normalized to LF"
+    Testo.create ~category:[ "encoding" ]
+      "bare CR line endings normalized to LF"
       (check_line_ending "a: 1\rb: 2\r");
     Testo.create ~category:[ "encoding" ]
       "NEL (U+0085) line endings normalized to LF"
