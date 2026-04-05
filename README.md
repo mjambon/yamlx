@@ -117,6 +117,14 @@ Reader → Scanner → Parser → Composer → Resolver
 - **Composer** — events → node graph (anchor/alias resolution).
 - **Resolver** — nodes → typed `value` tree (YAML 1.2 JSON schema).
 
+## License
+
+YAMLx is currently released under the **AGPL**. There is an ongoing
+fundraiser: once a funding goal is reached, the license will switch to
+the permissive **ISC** license for everyone. Donors above a certain
+threshold receive an immediate **commercial license**. See
+[FUNDING.md](FUNDING.md) for details.
+
 ## References
 
 - [YAML 1.2 specification (1.2.2)](https://yaml.org/spec/1.2.2/)
