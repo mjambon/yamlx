@@ -14,4 +14,4 @@ set -e
 
 here=$(dirname "${BASH_SOURCE[0]}")
 exec dune exec --no-build --no-print-directory \
-  tests/Test_yamlx.exe -- "$@" --chdir "$here"
+  tests/Test_yamlx.exe -- "$@" --chdir "$here/tests"

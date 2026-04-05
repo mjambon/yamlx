@@ -19,13 +19,10 @@
 (* Locate the test-suite source directory                                *)
 (* ------------------------------------------------------------------ *)
 
-(** Absolute path to the yaml-test-suite src directory. We derive it from the
-    location of this file's compilation artifact so the tests can be run from
-    any working directory. *)
-let suite_dir =
-  (* __FILE__ expands to the source path at compile time. *)
-  let here = Filename.dirname __FILE__ in
-  Filename.concat here "yaml-test-suite/src"
+(** Path to the yaml-test-suite src directory, relative to the dune test
+    working directory ({i _build/default/tests/}). The directory is copied
+    there by dune via the [(source_tree yaml-test-suite)] dep in [tests/dune]. *)
+let suite_dir = "yaml-test-suite/src"
 
 (* ------------------------------------------------------------------ *)
 (* Run a single test case                                                *)

@@ -7,8 +7,7 @@ build:
 
 .PHONY: test
 test:
-	opam exec -- dune build tests/Test_yamlx.exe
-	opam exec -- ./test
+	opam exec -- dune runtest
 
 # Create a local opam switch (= install deps only for this project)
 .PHONY: setup-opam

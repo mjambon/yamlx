@@ -7,4 +7,5 @@
       ppx_deriving.show
     )
   )
+  (deps (source_tree yaml-test-suite))
 )
