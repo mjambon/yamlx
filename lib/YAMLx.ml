@@ -148,7 +148,7 @@ let rec equal_value a b =
   | Null _, Null _ -> true
   | Bool (_, x), Bool (_, y) -> x = y
   | Int (_, x), Int (_, y) -> Int64.equal x y
-  | Float (_, x), Float (_, y) -> x = y
+  | Float (_, x), Float (_, y) -> Float.equal x y
   | String (_, x), String (_, y) -> x = y
   | Seq (_, xs), Seq (_, ys) -> List.equal equal_value xs ys
   | Map (_, ps), Map (_, qs) ->
@@ -266,6 +266,12 @@ let register_exception_printers () =
 (* Public submodules                                                     *)
 (* ------------------------------------------------------------------ *)
 
+let write_file path content =
+  let oc = open_out path in
+  Fun.protect
+    ~finally:(fun () -> close_out oc)
+    (fun () -> output_string oc content)
+
 module Nodes = struct
   type t = node list
 
@@ -283,10 +289,157 @@ module Nodes = struct
     | Ok input -> of_yaml ~file:path ?max_depth input
 
   let to_yaml = Printer.to_yaml
+  let to_yaml_file nodes path = write_file path (to_yaml nodes)
 
   let to_plain_yaml_exn ?strict ?expansion_limit docs =
     Printer.to_plain_yaml ?strict ?expansion_limit docs
+
+  let to_plain_yaml_file ?strict ?expansion_limit nodes path =
+    match
+      catch_errors (fun () -> to_plain_yaml_exn ?strict ?expansion_limit nodes)
+    with
+    | Error _ as e -> e
+    | Ok yaml ->
+        write_file path yaml;
+        Ok ()
 end
+
+(* ------------------------------------------------------------------ *)
+(* Value ↔ Node conversion                                              *)
+(* ------------------------------------------------------------------ *)
+
+(** Decide the scalar style for a string value so that it round-trips correctly
+    through a YAML parser using the JSON schema. Double-quoted style is used
+    whenever the plain representation would be misread as a non-string type or
+    is otherwise unsafe as a plain scalar. *)
+let string_scalar_style (s : string) : scalar_style =
+  let n = String.length s in
+  if n = 0 then Double_quoted
+  else
+    (* Patterns resolved to non-String types by the JSON schema *)
+    let is_null = s = "null" || s = "Null" || s = "NULL" || s = "~" in
+    let is_bool =
+      s = "true" || s = "True" || s = "TRUE" || s = "false" || s = "False"
+      || s = "FALSE"
+    in
+    let looks_numeric =
+      (* Decimal / hex / octal integers *)
+      (let start = if s.[0] = '+' || s.[0] = '-' then 1 else 0 in
+       start < n
+       && String.to_seq (String.sub s start (n - start))
+          |> Seq.for_all (fun c -> c >= '0' && c <= '9'))
+      || (n > 2 && s.[0] = '0' && (s.[1] = 'x' || s.[1] = 'X'))
+      || (n > 2 && s.[0] = '0' && (s.[1] = 'o' || s.[1] = 'O'))
+      (* Floats *)
+      || s = ".inf"
+      || s = ".Inf" || s = ".INF" || s = "+.inf" || s = "+.Inf" || s = "+.INF"
+      || s = "-.inf" || s = "-.Inf" || s = "-.INF" || s = ".nan" || s = ".NaN"
+      || s = ".NAN"
+      ||
+      match float_of_string_opt s with
+      | Some _ ->
+          String.contains s '.' || String.contains s 'e'
+          || String.contains s 'E'
+      | None -> false
+    in
+    if is_null || is_bool || looks_numeric then Double_quoted
+    else if not (Char_class.can_start_plain_block (Char.code s.[0])) then
+      Double_quoted
+    else if s.[n - 1] = ' ' then Double_quoted
+    else if String.contains s '\n' || String.contains s '\r' then Double_quoted
+    else
+      (* ': ' or ':\n' → mapping-value indicator inside the scalar *)
+      let colon_unsafe =
+        try
+          let i = String.index s ':' in
+          i + 1 < n && (s.[i + 1] = ' ' || s.[i + 1] = '\n')
+        with
+        | Not_found -> false
+      in
+      (* ' #' → comment indicator inside the scalar *)
+      let hash_unsafe =
+        try
+          let i = String.index s '#' in
+          i > 0 && s.[i - 1] = ' '
+        with
+        | Not_found -> false
+      in
+      if colon_unsafe || hash_unsafe then Double_quoted else Plain
+
+(** Format a float as a YAML-safe plain scalar. *)
+let format_float (f : float) : string =
+  if Float.is_nan f then ".nan"
+  else if Float.is_infinite f then if f > 0.0 then ".inf" else "-.inf"
+  else
+    let s = Printf.sprintf "%.17g" f in
+    (* Ensure the string won't be re-read as an integer by requiring a
+       decimal point or exponent marker. *)
+    if String.contains s '.' || String.contains s 'e' || String.contains s 'E'
+    then s
+    else s ^ ".0"
+
+let zero_pos = Types.zero_pos
+let zero_loc = { Types.start_pos = zero_pos; end_pos = zero_pos }
+let no_loc = zero_loc
+
+let make_scalar ?(style = Types.Plain) value : node =
+  Scalar_node
+    {
+      anchor = None;
+      tag = None;
+      value;
+      style;
+      loc = no_loc;
+      height = 1;
+      head_comments = [];
+      line_comment = None;
+    }
+
+let rec value_to_node : value -> node = function
+  | Null _ -> make_scalar "null"
+  | Bool (_, b) -> make_scalar (if b then "true" else "false")
+  | Int (_, n) -> make_scalar (Int64.to_string n)
+  | Float (_, f) -> make_scalar (format_float f)
+  | String (_, s) -> make_scalar ~style:(string_scalar_style s) s
+  | Seq (_, items) ->
+      let ns = List.map value_to_node items in
+      let h =
+        1 + List.fold_left (fun acc nd -> max acc (node_height nd)) 0 ns
+      in
+      Sequence_node
+        {
+          anchor = None;
+          tag = None;
+          items = ns;
+          flow = false;
+          loc = no_loc;
+          height = h;
+          head_comments = [];
+          line_comment = None;
+          foot_comments = [];
+        }
+  | Map (_, pairs) ->
+      let ns =
+        List.map (fun (_, k, v) -> (value_to_node k, value_to_node v)) pairs
+      in
+      let h =
+        1
+        + List.fold_left
+            (fun acc (k, v) -> max acc (max (node_height k) (node_height v)))
+            0 ns
+      in
+      Mapping_node
+        {
+          anchor = None;
+          tag = None;
+          pairs = ns;
+          flow = false;
+          loc = no_loc;
+          height = h;
+          head_comments = [];
+          line_comment = None;
+          foot_comments = [];
+        }
 
 module Values = struct
   type t = value list
@@ -308,6 +461,12 @@ module Values = struct
     | Result.Error msg -> Result.Error ("file " ^ path ^ ": " ^ msg)
     | Ok input -> of_yaml ~file:path ?max_depth ?expansion_limit input
 
+  let of_nodes_exn ?(expansion_limit = Types.default_expansion_limit) nodes =
+    Resolver.resolve_documents ~expansion_limit nodes
+
+  let of_nodes ?expansion_limit nodes =
+    catch_errors (fun () -> of_nodes_exn ?expansion_limit nodes)
+
   let one_of_yaml_exn ?max_depth ?expansion_limit input =
     match of_yaml_exn ?max_depth ?expansion_limit input with
     | [] -> raise (Error (Document_count_error "no document in input"))
@@ -326,6 +485,10 @@ module Values = struct
     with
     | Result.Error msg -> Result.Error ("file " ^ path ^ ": " ^ msg)
     | Ok input -> one_of_yaml ~file:path ?max_depth ?expansion_limit input
+
+  let to_nodes values = List.map value_to_node values
+  let to_yaml values = Nodes.to_yaml (to_nodes values)
+  let to_yaml_file values path = write_file path (to_yaml values)
 end
 
 (* ------------------------------------------------------------------ *)

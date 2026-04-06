@@ -638,6 +638,100 @@ let printer_tests () =
   ]
 
 (* ------------------------------------------------------------------ *)
+(* Node ↔ Value conversion roundtrip tests                               *)
+(* ------------------------------------------------------------------ *)
+
+(** Helpers for building value trees by hand, using [zero_loc] throughout so
+    that position fields carry no meaning. *)
+let z = YAMLx.zero_loc
+
+let mk_null () = YAMLx.Null z
+let mk_bool b = YAMLx.Bool (z, b)
+let mk_int n = YAMLx.Int (z, Int64.of_int n)
+let mk_float f = YAMLx.Float (z, f)
+let mk_str s = YAMLx.String (z, s)
+let mk_seq vs = YAMLx.Seq (z, vs)
+let mk_map pairs = YAMLx.Map (z, List.map (fun (k, v) -> (z, k, v)) pairs)
+
+(** [value_rt v] performs the value → nodes → value roundtrip and returns the
+    result. A correct implementation must satisfy [equal_value v (value_rt v)].
+*)
+let value_rt v =
+  let nodes = YAMLx.Values.to_nodes [ v ] in
+  match YAMLx.Values.of_nodes_exn nodes with
+  | [ v' ] -> v'
+  | vs ->
+      failwith
+        (Printf.sprintf "value_rt: expected 1 value, got %d" (List.length vs))
+
+(** [nodes_rt yaml] performs the nodes → values → nodes roundtrip on [yaml] and
+    returns both the intermediate values and the final values obtained by
+    parsing the re-serialised nodes. A correct roundtrip must produce equal
+    value lists. *)
+let nodes_rt yaml =
+  let nodes = YAMLx.Nodes.of_yaml_exn yaml in
+  let values = YAMLx.Values.of_nodes_exn nodes in
+  let nodes2 = YAMLx.Values.to_nodes values in
+  let values2 = YAMLx.Values.of_nodes_exn nodes2 in
+  (values, values2)
+
+let conversion_tests () =
+  let check_value_rt label v =
+    Testo.create ~category:[ "conversion" ] ("value → node → value: " ^ label)
+      (fun () ->
+        let v' = value_rt v in
+        Testo.(check yamlx_values) [ v ] [ v' ])
+  in
+  let check_nodes_rt label yaml =
+    Testo.create ~category:[ "conversion" ] ("node → value → node: " ^ label)
+      (fun () ->
+        let vs, vs2 = nodes_rt yaml in
+        Testo.(check yamlx_values) vs vs2)
+  in
+  [
+    (* value → node → value: primitives *)
+    check_value_rt "null" (mk_null ());
+    check_value_rt "bool true" (mk_bool true);
+    check_value_rt "bool false" (mk_bool false);
+    check_value_rt "int zero" (mk_int 0);
+    check_value_rt "int positive" (mk_int 42);
+    check_value_rt "int negative" (mk_int (-1));
+    check_value_rt "float" (mk_float 3.14);
+    check_value_rt "float nan" (mk_float Float.nan);
+    check_value_rt "float inf" (mk_float Float.infinity);
+    check_value_rt "float neg inf" (mk_float Float.neg_infinity);
+    check_value_rt "string simple" (mk_str "hello");
+    check_value_rt "string empty" (mk_str "");
+    check_value_rt "string with newline" (mk_str "line1\nline2");
+    check_value_rt "string that looks like int" (mk_str "42");
+    check_value_rt "string that looks like null" (mk_str "null");
+    check_value_rt "string that looks like bool" (mk_str "true");
+    (* value → node → value: collections *)
+    check_value_rt "empty sequence" (mk_seq []);
+    check_value_rt "sequence of ints" (mk_seq [ mk_int 1; mk_int 2; mk_int 3 ]);
+    check_value_rt "empty mapping" (mk_map []);
+    check_value_rt "mapping str→int"
+      (mk_map [ (mk_str "a", mk_int 1); (mk_str "b", mk_int 2) ]);
+    check_value_rt "nested mapping"
+      (mk_map
+         [
+           (mk_str "x", mk_map [ (mk_str "y", mk_int 7) ]);
+           (mk_str "z", mk_seq [ mk_null (); mk_bool true ]);
+         ]);
+    (* node → value → node: parsed YAML inputs *)
+    check_nodes_rt "plain scalars" "foo\n";
+    check_nodes_rt "null" "~\n";
+    check_nodes_rt "bool" "true\n";
+    check_nodes_rt "int" "42\n";
+    check_nodes_rt "float" "3.14\n";
+    check_nodes_rt "block mapping" "a: 1\nb: hello\n";
+    check_nodes_rt "block sequence" "- 1\n- two\n- ~\n";
+    check_nodes_rt "nested" "outer:\n  inner: 99\n";
+    check_nodes_rt "alias expanded" "x: &a 1\ny: *a\n";
+    check_nodes_rt "multi-document" "1\n---\ntwo\n";
+  ]
+
+(* ------------------------------------------------------------------ *)
 (* Entry point                                                           *)
 (* ------------------------------------------------------------------ *)
 
@@ -645,4 +739,5 @@ let () =
   Testo.interpret_argv ~project_name:"yamlx" (fun _tags ->
       unit_tests () @ encoding_tests () @ roundtrip_tests () @ comment_tests ()
       @ anchor_tests () @ printer_tests () @ expansion_limit_tests ()
-      @ depth_limit_tests () @ performance_tests () @ suite_tests ())
+      @ depth_limit_tests () @ performance_tests () @ conversion_tests ()
+      @ suite_tests ())

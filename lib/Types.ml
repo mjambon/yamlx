@@ -23,7 +23,7 @@ type pos = {
     [offset_bytes] are absolute distances from the start of the input, measured
     the same way. *)
 
-let pos_zero =
+let zero_pos =
   { line = 1; column = 0; column_bytes = 0; offset = 0; offset_bytes = 0 }
 
 type loc = { start_pos : pos; end_pos : pos }
@@ -108,8 +108,8 @@ type token_kind =
           block collections. *)
   | Flow_sequence_start  (** \[ *)
   | Flow_sequence_end  (** \] *)
-  | Flow_mapping_start  (** { *)
-  | Flow_mapping_end  (** } *)
+  | Flow_mapping_start  (** \{ *)
+  | Flow_mapping_end  (** \} *)
   | Block_entry  (** [-] followed by whitespace or newline *)
   | Flow_entry  (** [,] *)
   | Key  (** [?] (explicit) or synthetic (implicit key) *)
