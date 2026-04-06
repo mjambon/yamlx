@@ -1,22 +1,42 @@
-(** YAML 1.2 tag resolver (JSON schema). Resolves untagged plain scalars to
-    typed values according to the YAML 1.2 JSON schema (the recommended default
-    schema).
+(** YAML tag resolver. Resolves composed node trees into typed value trees.
 
-    Rules (applied only to plain scalars without an explicit tag): null →
-    matches /^(null|Null|NULL|~|)$/ bool → matches
-    /^(true|True|TRUE|false|False|FALSE)$/ int → decimal: /^[-+]?[0-9]+$/ hex:
-    /^0x[0-9a-fA-F]+$/ octal: /^0o[0-7]+$/ float → decimal or scientific
-    notation; also .inf/.nan variants
+    Supports YAML 1.2 (JSON schema, the default) and YAML 1.1.
 
-    Non-plain scalars (quoted, block) always resolve to String.
+    YAML 1.2 JSON schema rules (plain scalars only):
+    - null  : [null|Null|NULL|~|""]
+    - bool  : [true|True|TRUE|false|False|FALSE]
+    - int   : decimal, [0x…] hex, [0o…] octal
+    - float : decimal/scientific; [.inf], [.nan] variants
+    - str   : everything else; all non-plain scalars
 
-    Explicit [!!str], [!!int], etc. tags override the schema resolution. *)
+    Additional YAML 1.1 rules (plain scalars only):
+    - bool  : also [y|Y|yes|Yes|YES|n|N|no|No|NO|on|On|ON|off|Off|OFF]
+    - int   : also octal [0[0-7]+] and sexagesimal ([H:MM:SS])
+    - float : also sexagesimal ([H:MM:SS.s])
+    - merge : plain [<<] mapping key triggers merge-key expansion *)
 
 val resolve_documents :
-  ?expansion_limit:int -> Types.node list -> Types.value list
-(** Resolve a list of document nodes (as returned by [Composer.compose_stream])
-    into a list of typed [Types.value] trees.
+  ?expansion_limit:int ->
+  ?schema:Types.schema ->
+  ?strict_schema:bool ->
+  ?reject_ambiguous:bool ->
+  ((int * int) option * Types.node) list ->
+  Types.value list
+(** Resolve a list of [(version, node)] pairs into typed values.
 
-    [expansion_limit] caps the total number of nodes visited during alias
-    expansion. Raises {!Types.Expansion_limit_exceeded} if the limit is
-    exceeded. Defaults to {!Types.default_expansion_limit}. *)
+    [version] is the [%YAML] directive from the document (e.g. [(1,1)]).
+    When it disagrees with [schema] and [strict_schema = true],
+    {!Types.Schema_error} is raised.  Otherwise the directive overrides
+    [schema] for that document.
+
+    [expansion_limit] caps total nodes visited during alias expansion.
+    Defaults to {!Types.default_expansion_limit}.
+
+    [schema] sets the default schema (default: {!Types.Yaml_1_2}).
+
+    [strict_schema] raises {!Types.Schema_error} when a document's [%YAML]
+    directive conflicts with [schema] (default: [false]).
+
+    [reject_ambiguous] raises {!Types.Schema_error} for plain scalars that
+    would resolve differently under YAML 1.1 (only meaningful with
+    [schema = Yaml_1_2], default: [false]). *)

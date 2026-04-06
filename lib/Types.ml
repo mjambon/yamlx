@@ -54,6 +54,11 @@ type error =
   | Document_count_error of string
       (** The input contained the wrong number of documents for a
           single-document operation. *)
+  | Schema_error of string
+      (** A schema conflict was detected: either the document's [%YAML]
+          directive disagrees with the requested schema (when
+          [~strict_schema:true]), or a plain scalar is ambiguous between YAML
+          1.1 and 1.2 (when [~reject_ambiguous:true]). *)
 
 exception Error of error
 (** The single exception raised by this library. Match on the payload to
@@ -67,6 +72,16 @@ let default_expansion_limit = 1_000_000
 (** Default maximum nesting depth accepted during composition. Inputs deeper
     than this raise {!Error (Depth_limit_exceeded _)}. *)
 let default_max_depth = 512
+
+(** YAML schema used to resolve plain scalars to typed values. *)
+type schema =
+  | Yaml_1_2
+      (** YAML 1.2 JSON schema (the default). Booleans are only [true]/[false];
+          octal uses [0o…] prefix; sexagesimal notation is not recognised. *)
+  | Yaml_1_1
+      (** YAML 1.1 schema. Adds extended booleans ([yes]/[no]/[on]/[off] etc.),
+          [0…] octal, sexagesimal integers and floats, and merge-key ([<<])
+          expansion. Use this to read legacy YAML files. *)
 
 let scan_error pos fmt =
   Printf.ksprintf (fun msg -> raise (Error (Scan_error { msg; pos }))) fmt

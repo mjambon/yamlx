@@ -179,17 +179,27 @@ let parse_events (input : string) : event list =
 (* Public API — Nodes                                                    *)
 (* ------------------------------------------------------------------ *)
 
-let parse_nodes ?(max_depth = Types.default_max_depth) (input : string) :
-    node list =
+let parse_nodes_versioned ?(max_depth = Types.default_max_depth)
+    (input : string) : ((int * int) option * node) list =
   let parser_ = make_pipeline input in
   let composer = Composer.create ~max_depth parser_ in
-  let nodes = Composer.compose_stream composer in
+  let versioned = Composer.compose_stream composer in
   let raw_comments = Scanner.drain_comments (Parser.get_scanner parser_) in
-  Comment_attacher.attach nodes raw_comments
+  let plain_nodes = List.map snd versioned in
+  let attached = Comment_attacher.attach plain_nodes raw_comments in
+  (* Re-pair version info with the comment-attached nodes (same order). *)
+  List.map2 (fun (ver, _) node -> (ver, node)) versioned attached
+
+let parse_nodes ?(max_depth = Types.default_max_depth) (input : string) :
+    node list =
+  List.map snd (parse_nodes_versioned ~max_depth input)
 
 (* ------------------------------------------------------------------ *)
 (* Public API — exceptions and defaults                                  *)
 (* ------------------------------------------------------------------ *)
+
+type schema = Types.schema = Yaml_1_2 | Yaml_1_1
+[@@deriving show { with_path = false }]
 
 type error = Types.error =
   | Scan_error of yaml_error
@@ -198,6 +208,7 @@ type error = Types.error =
   | Depth_limit_exceeded of int
   | Plain_error of string
   | Document_count_error of string
+  | Schema_error of string
 [@@deriving show { with_path = false }]
 
 exception Error = Types.Error
@@ -246,6 +257,8 @@ let catch_errors ?file f =
       Result.Error (other_error ("plain error: " ^ msg))
   | Error (Document_count_error msg) ->
       Result.Error (other_error ("document count error: " ^ msg))
+  | Error (Schema_error msg) ->
+      Result.Error (other_error ("schema error: " ^ msg))
 
 let register_exception_printers () =
   Printexc.register_printer (function
@@ -260,6 +273,7 @@ let register_exception_printers () =
     | Error (Plain_error msg) -> Some ("YAMLx.Error (Plain_error): " ^ msg)
     | Error (Document_count_error msg) ->
         Some ("YAMLx.Error (Document_count_error): " ^ msg)
+    | Error (Schema_error msg) -> Some ("YAMLx.Error (Schema_error): " ^ msg)
     | _ -> None)
 
 (* ------------------------------------------------------------------ *)
@@ -445,46 +459,68 @@ module Values = struct
   type t = value list
 
   let of_yaml_exn ?(max_depth = Types.default_max_depth)
-      ?(expansion_limit = Types.default_expansion_limit) (input : string) :
-      value list =
-    let nodes = parse_nodes ~max_depth input in
-    Resolver.resolve_documents ~expansion_limit nodes
+      ?(expansion_limit = Types.default_expansion_limit) ?schema ?strict_schema
+      ?reject_ambiguous (input : string) : value list =
+    let versioned = parse_nodes_versioned ~max_depth input in
+    Resolver.resolve_documents ~expansion_limit ?schema ?strict_schema
+      ?reject_ambiguous versioned
 
-  let of_yaml ?file ?max_depth ?expansion_limit input =
-    catch_errors ?file (fun () -> of_yaml_exn ?max_depth ?expansion_limit input)
+  let of_yaml ?file ?max_depth ?expansion_limit ?schema ?strict_schema
+      ?reject_ambiguous input =
+    catch_errors ?file (fun () ->
+        of_yaml_exn ?max_depth ?expansion_limit ?schema ?strict_schema
+          ?reject_ambiguous input)
 
-  let of_yaml_file ?max_depth ?expansion_limit path =
+  let of_yaml_file ?max_depth ?expansion_limit ?schema ?strict_schema
+      ?reject_ambiguous path =
     match
       try Ok (read_file path) with
       | Sys_error msg -> Result.Error msg
     with
     | Result.Error msg -> Result.Error ("file " ^ path ^ ": " ^ msg)
-    | Ok input -> of_yaml ~file:path ?max_depth ?expansion_limit input
+    | Ok input ->
+        of_yaml ~file:path ?max_depth ?expansion_limit ?schema ?strict_schema
+          ?reject_ambiguous input
 
-  let of_nodes_exn ?(expansion_limit = Types.default_expansion_limit) nodes =
-    Resolver.resolve_documents ~expansion_limit nodes
+  let of_nodes_exn ?(expansion_limit = Types.default_expansion_limit) ?schema
+      ?strict_schema ?reject_ambiguous nodes =
+    (* Nodes without version info: pass None for each document. *)
+    let versioned = List.map (fun n -> (None, n)) nodes in
+    Resolver.resolve_documents ~expansion_limit ?schema ?strict_schema
+      ?reject_ambiguous versioned
 
-  let of_nodes ?expansion_limit nodes =
-    catch_errors (fun () -> of_nodes_exn ?expansion_limit nodes)
+  let of_nodes ?expansion_limit ?schema ?strict_schema ?reject_ambiguous nodes =
+    catch_errors (fun () ->
+        of_nodes_exn ?expansion_limit ?schema ?strict_schema ?reject_ambiguous
+          nodes)
 
-  let one_of_yaml_exn ?max_depth ?expansion_limit input =
-    match of_yaml_exn ?max_depth ?expansion_limit input with
+  let one_of_yaml_exn ?max_depth ?expansion_limit ?schema ?strict_schema
+      ?reject_ambiguous input =
+    match
+      of_yaml_exn ?max_depth ?expansion_limit ?schema ?strict_schema
+        ?reject_ambiguous input
+    with
     | [] -> raise (Error (Document_count_error "no document in input"))
     | [ v ] -> v
     | _ :: _ :: _ ->
         raise (Error (Document_count_error "multiple documents in input"))
 
-  let one_of_yaml ?file ?max_depth ?expansion_limit input =
+  let one_of_yaml ?file ?max_depth ?expansion_limit ?schema ?strict_schema
+      ?reject_ambiguous input =
     catch_errors ?file (fun () ->
-        one_of_yaml_exn ?max_depth ?expansion_limit input)
+        one_of_yaml_exn ?max_depth ?expansion_limit ?schema ?strict_schema
+          ?reject_ambiguous input)
 
-  let one_of_yaml_file ?max_depth ?expansion_limit path =
+  let one_of_yaml_file ?max_depth ?expansion_limit ?schema ?strict_schema
+      ?reject_ambiguous path =
     match
       try Ok (read_file path) with
       | Sys_error msg -> Result.Error msg
     with
     | Result.Error msg -> Result.Error ("file " ^ path ^ ": " ^ msg)
-    | Ok input -> one_of_yaml ~file:path ?max_depth ?expansion_limit input
+    | Ok input ->
+        one_of_yaml ~file:path ?max_depth ?expansion_limit ?schema
+          ?strict_schema ?reject_ambiguous input
 
   let to_nodes values = List.map value_to_node values
   let to_yaml values = Nodes.to_yaml (to_nodes values)

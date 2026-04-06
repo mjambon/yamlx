@@ -13,6 +13,8 @@ val create : ?max_depth:int -> Parser.t -> t
     (default: {!Types.default_max_depth}); inputs exceeding it raise
     {!Types.Depth_limit_exceeded}. *)
 
-val compose_stream : t -> Types.node list
+val compose_stream : t -> ((int * int) option * Types.node) list
 (** Compose all documents in a YAML stream. Reads from [STREAM_START] to
-    [STREAM_END] and returns one [Types.node] per document. *)
+    [STREAM_END] and returns one [(version, node)] pair per document, where
+    [version] is the value of the [%YAML] directive (e.g. [(1, 1)] for
+    [%YAML 1.1]) if present in that document. *)

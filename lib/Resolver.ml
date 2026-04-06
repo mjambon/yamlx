@@ -1,42 +1,59 @@
-(** YAML 1.2 tag resolver (JSON schema). Resolves untagged plain scalars to
-    typed values according to the YAML 1.2 JSON schema (the recommended default
-    schema).
+(** YAML tag resolver. Supports YAML 1.2 (JSON schema, the default) and YAML 1.1
+    schemas.
 
-    Rules (applied only to plain scalars without an explicit tag): null →
-    matches /^(null|Null|NULL|~|)$/ bool → matches
-    /^(true|True|TRUE|false|False|FALSE)$/ int → decimal: /^[-+]?[0-9]+$/ hex:
-    /^0x[0-9a-fA-F]+$/ octal: /^0o[0-7]+$/ float → decimal or scientific
-    notation; also .inf/.nan variants
+    Schema selection per call:
+    - [~schema:Yaml_1_2] (default): strict YAML 1.2 JSON schema.
+    - [~schema:Yaml_1_1]: extended YAML 1.1 schema (legacy files).
+    - [%YAML 1.x] directives in the stream override the default per document
+      unless [~strict_schema:true] is set, in which case a mismatch raises
+      {!Types.Schema_error}.
 
-    Non-plain scalars (quoted, block) always resolve to String.
+    YAML 1.2 JSON schema rules (plain scalars only):
+    - null : [null|Null|NULL|~|""]
+    - bool : [true|True|TRUE|false|False|FALSE]
+    - int : decimal [[-+]?[0-9]+], hex [0x…], octal [0o…]
+    - float : decimal/scientific; [.inf], [.nan] variants
+    - str : everything else; all non-plain scalars
 
-    The full URI for the standard types is [tag:yaml.org,2002:XXX]. Explicit
-    [!!str], [!!int], etc. tags override the schema resolution. *)
+    Additional YAML 1.1 rules (plain scalars only):
+    - bool : also [y|Y|yes|Yes|YES|n|N|no|No|NO|on|On|ON|off|Off|OFF]
+    - int : also octal [0[0-7]+] and sexagesimal [H:MM:SS]
+    - float : also sexagesimal [H:MM:SS.s]
+    - merge : plain [<<] mapping key triggers merge-key expansion
+
+    [~reject_ambiguous:true] (YAML 1.2 only): raises {!Types.Schema_error} for
+    plain scalars that would resolve differently under YAML 1.1. *)
 
 open Types
 
 (* ------------------------------------------------------------------ *)
-(* Pattern matching helpers                                             *)
+(* YAML 1.2 matchers                                                     *)
 (* ------------------------------------------------------------------ *)
 
 let is_null_str s = s = "null" || s = "Null" || s = "NULL" || s = "~" || s = ""
-let is_true_str s = s = "true" || s = "True" || s = "TRUE"
-let is_false_str s = s = "false" || s = "False" || s = "FALSE"
+let is_true_str_12 s = s = "true" || s = "True" || s = "TRUE"
+let is_false_str_12 s = s = "false" || s = "False" || s = "FALSE"
 
-(** True if [s] is a valid decimal integer (possibly with sign). *)
+(** True if [s] is a valid YAML 1.2 JSON-schema decimal integer. The JSON schema
+    allows [0] or [[-+]?[1-9][0-9]*] — no leading zeros. *)
 let is_decimal_int s =
   let n = String.length s in
   if n = 0 then false
   else begin
     let start = if s.[0] = '+' || s.[0] = '-' then 1 else 0 in
-    if start >= n then false
+    let rest_len = n - start in
+    if rest_len = 0 then false
+    else if rest_len = 1 then s.[start] >= '0' && s.[start] <= '9'
     else
-      String.sub s start (n - start)
-      |> String.to_seq
-      |> Seq.for_all (fun c -> c >= '0' && c <= '9')
+      (* Multi-digit: must not start with 0 *)
+      s.[start] >= '1'
+      && s.[start] <= '9'
+      && String.sub s (start + 1) (n - start - 1)
+         |> String.to_seq
+         |> Seq.for_all (fun c -> c >= '0' && c <= '9')
   end
 
-(** True if [s] is a hex integer (0x…). *)
+(** True if [s] is a hex integer ([0x…]). *)
 let is_hex_int s =
   let n = String.length s in
   n > 2
@@ -46,8 +63,8 @@ let is_hex_int s =
      |> String.to_seq
      |> Seq.for_all Char_class.(fun c -> is_hex_digit (Char.code c))
 
-(** True if [s] is an octal integer (0o…). *)
-let is_octal_int s =
+(** True if [s] is a YAML 1.2 octal integer ([0o…]). *)
+let is_octal_int_12 s =
   let n = String.length s in
   n > 2
   && s.[0] = '0'
@@ -57,7 +74,7 @@ let is_octal_int s =
      |> Seq.for_all (fun c -> c >= '0' && c <= '7')
 
 (** Try to parse a float. Returns [None] for non-numeric strings. *)
-let try_float s =
+let try_float_12 s =
   if s = ".inf" || s = ".Inf" || s = ".INF" then Some Float.infinity
   else if s = "+.inf" || s = "+.Inf" || s = "+.INF" then Some Float.infinity
   else if s = "-.inf" || s = "-.Inf" || s = "-.INF" then Some Float.neg_infinity
@@ -71,122 +88,462 @@ let try_float s =
     | _ -> None
 
 (* ------------------------------------------------------------------ *)
+(* YAML 1.1 additional matchers                                          *)
+(* ------------------------------------------------------------------ *)
+
+(** YAML 1.1 boolean values not recognised in YAML 1.2. *)
+let is_true_str_11_only s =
+  s = "y" || s = "Y" || s = "yes" || s = "Yes" || s = "YES" || s = "on"
+  || s = "On" || s = "ON"
+
+let is_false_str_11_only s =
+  s = "n" || s = "N" || s = "no" || s = "No" || s = "NO" || s = "off"
+  || s = "Off" || s = "OFF"
+
+let is_true_str_11 s = is_true_str_12 s || is_true_str_11_only s
+let is_false_str_11 s = is_false_str_12 s || is_false_str_11_only s
+
+(** True if [s] is a YAML 1.1 octal integer: leading [0] followed by one or more
+    octal digits, with no [o]/[x]/[b] prefix. For example [0755]. *)
+let is_octal_int_11 s =
+  let n = String.length s in
+  if n < 2 then false
+  else
+    let c1 = s.[1] in
+    s.[0] = '0'
+    && c1 >= '0' && c1 <= '7'
+    && String.sub s 1 (n - 1)
+       |> String.to_seq
+       |> Seq.for_all (fun c -> c >= '0' && c <= '7')
+
+(** Try to parse a YAML 1.1 sexagesimal integer like [3:25:45] (= 12345). The
+    first component must be [1–9]; subsequent components are [0–59]. Returns
+    [None] if [s] does not match the pattern. *)
+let parse_sexagesimal_int s =
+  (* Optional leading sign *)
+  let sign, s =
+    if String.length s > 0 && s.[0] = '-' then
+      (-1L, String.sub s 1 (String.length s - 1))
+    else if String.length s > 0 && s.[0] = '+' then
+      (1L, String.sub s 1 (String.length s - 1))
+    else (1L, s)
+  in
+  let parts = String.split_on_char ':' s in
+  match parts with
+  | []
+  | [ _ ] ->
+      None (* need at least two components *)
+  | first_s :: rest -> (
+      try
+        let first = int_of_string first_s in
+        (* First component must be 1–9 (per yaml.org/type/int) *)
+        if first < 1 then None
+        else
+          let rest_ns = List.map int_of_string rest in
+          (* Each subsequent component must be 0–59 and contain only digits *)
+          if List.exists (fun n -> n < 0 || n > 59) rest_ns then None
+          else if
+            List.exists
+              (fun p ->
+                String.length p = 0
+                || not
+                     (String.to_seq p
+                     |> Seq.for_all (fun c -> c >= '0' && c <= '9')))
+              rest
+          then None
+          else
+            let v =
+              List.fold_left
+                (fun acc n -> Int64.add (Int64.mul acc 60L) (Int64.of_int n))
+                (Int64.of_int first) rest_ns
+            in
+            Some (Int64.mul sign v)
+      with
+      | _ -> None)
+
+(** Try to parse a YAML 1.1 sexagesimal float like [20:30.15] (= 1230.15). The
+    integer components are base-60; the last component carries the fractional
+    part. Returns [None] if [s] does not match. *)
+let parse_sexagesimal_float s =
+  let sign, s =
+    if String.length s > 0 && s.[0] = '-' then
+      (-1.0, String.sub s 1 (String.length s - 1))
+    else if String.length s > 0 && s.[0] = '+' then
+      (1.0, String.sub s 1 (String.length s - 1))
+    else (1.0, s)
+  in
+  let parts = String.split_on_char ':' s in
+  match parts with
+  | []
+  | [ _ ] ->
+      None
+  | _ -> (
+      let n = List.length parts in
+      let int_parts = List.filteri (fun i _ -> i < n - 1) parts in
+      let last = List.nth parts (n - 1) in
+      (* Last component must contain a '.' to be a float, not a sexagesimal int *)
+      if not (String.contains last '.') then None
+      else
+        try
+          let int_ns = List.map int_of_string int_parts in
+          let last_f = float_of_string last in
+          match int_ns with
+          | [] -> None
+          | first :: _ ->
+              if first < 1 then None
+              else if List.exists (fun n -> n < 0 || n > 59) (List.tl int_ns)
+              then None
+              else
+                let int_val =
+                  List.fold_left (fun acc n -> (acc * 60) + n) 0 int_ns
+                in
+                Some (sign *. ((float_of_int int_val *. 60.0) +. last_f))
+        with
+        | _ -> None)
+
+(* ------------------------------------------------------------------ *)
+(* Ambiguity detection (reject_ambiguous mode)                          *)
+(* ------------------------------------------------------------------ *)
+
+(** Return an error message if plain scalar [s] would resolve differently under
+    YAML 1.1 than under YAML 1.2. Returns [None] if unambiguous. *)
+let ambiguity_message s =
+  if is_true_str_11_only s then
+    Some
+      (Printf.sprintf
+         "%S is a boolean (true) in YAML 1.1 but a string in YAML 1.2" s)
+  else if is_false_str_11_only s then
+    Some
+      (Printf.sprintf
+         "%S is a boolean (false) in YAML 1.1 but a string in YAML 1.2" s)
+  else if is_octal_int_11 s then
+    Some
+      (Printf.sprintf
+         "%S is an octal integer in YAML 1.1 but a string in YAML 1.2 (use %S \
+          for YAML 1.2 octal)"
+         s
+         ("0o" ^ String.sub s 1 (String.length s - 1)))
+  else
+    match parse_sexagesimal_int s with
+    | Some _ ->
+        Some
+          (Printf.sprintf
+             "%S is a sexagesimal integer in YAML 1.1 but a string in YAML 1.2"
+             s)
+    | None -> (
+        match parse_sexagesimal_float s with
+        | Some _ ->
+            Some
+              (Printf.sprintf
+                 "%S is a sexagesimal float in YAML 1.1 but a string in YAML \
+                  1.2"
+                 s)
+        | None -> None)
+
+(* ------------------------------------------------------------------ *)
 (* Tag resolution                                                        *)
 (* ------------------------------------------------------------------ *)
 
-(** Canonical tag URI prefix for YAML standard types. *)
 let yaml_prefix = "tag:yaml.org,2002:"
-
 let null_tag = yaml_prefix ^ "null"
 let bool_tag = yaml_prefix ^ "bool"
 let int_tag = yaml_prefix ^ "int"
 let float_tag = yaml_prefix ^ "float"
 let str_tag = yaml_prefix ^ "str"
 
-(** Resolve a plain scalar's tag according to the JSON schema. Returns the
-    canonical tag URI. *)
-let resolve_plain_tag s =
-  if is_null_str s then yaml_prefix ^ "null"
-  else if is_true_str s || is_false_str s then yaml_prefix ^ "bool"
-  else if is_decimal_int s || is_hex_int s || is_octal_int s then
-    yaml_prefix ^ "int"
+let resolve_plain_tag_12 s =
+  if is_null_str s then null_tag
+  else if is_true_str_12 s || is_false_str_12 s then bool_tag
+  else if is_decimal_int s || is_hex_int s || is_octal_int_12 s then int_tag
   else
-    match try_float s with
-    | Some _ -> yaml_prefix ^ "float"
-    | None -> yaml_prefix ^ "str"
+    match try_float_12 s with
+    | Some _ -> float_tag
+    | None -> str_tag
 
-(** Determine the effective tag for a scalar. [explicit_tag] is [Some uri] if
-    the YAML source had an explicit [!!tag]. For non-plain scalars without an
-    explicit tag, the tag is always [str]. *)
-let effective_tag ~explicit_tag ~style ~value =
+let resolve_plain_tag_11 s =
+  if is_null_str s then null_tag
+  else if is_true_str_11 s || is_false_str_11 s then bool_tag
+  else if
+    is_decimal_int s || is_hex_int s || is_octal_int_12 s || is_octal_int_11 s
+    ||
+    match parse_sexagesimal_int s with
+    | Some _ -> true
+    | None -> false
+  then int_tag
+  else
+    match try_float_12 s with
+    | Some _ -> float_tag
+    | None -> (
+        match parse_sexagesimal_float s with
+        | Some _ -> float_tag
+        | None -> str_tag)
+
+let effective_tag ~schema ~explicit_tag ~style ~value =
   match explicit_tag with
-  | Some t -> t (* explicit tag always wins *)
+  | Some t -> t
   | None -> (
       match style with
-      | Plain -> resolve_plain_tag value
-      | Single_quoted -> yaml_prefix ^ "str"
-      | Double_quoted -> yaml_prefix ^ "str"
-      | Literal -> yaml_prefix ^ "str"
-      | Folded -> yaml_prefix ^ "str")
+      | Plain -> (
+          match schema with
+          | Yaml_1_2 -> resolve_plain_tag_12 value
+          | Yaml_1_1 -> resolve_plain_tag_11 value)
+      | Single_quoted
+      | Double_quoted
+      | Literal
+      | Folded ->
+          str_tag)
 
 (* ------------------------------------------------------------------ *)
 (* Value construction                                                    *)
 (* ------------------------------------------------------------------ *)
 
-(** Parse an integer from a YAML scalar value. Supports decimal, hexadecimal
-    (0x), and octal (0o) notation. *)
-let parse_int s =
+let parse_int_12 s =
   if is_hex_int s then
     Int64.of_string ("0x" ^ String.sub s 2 (String.length s - 2))
-  else if is_octal_int s then
+  else if is_octal_int_12 s then
     Int64.of_string ("0o" ^ String.sub s 2 (String.length s - 2))
   else Int64.of_string s
 
-(** Resolve a scalar node's tag and construct the corresponding [value]. *)
-let resolve_scalar ~(loc : Types.loc) ~(explicit_tag : string option)
-    ~(style : scalar_style) ~(value : string) : Types.value =
-  let tag = effective_tag ~explicit_tag ~style ~value in
+let parse_int_11 s =
+  if is_hex_int s then
+    Int64.of_string ("0x" ^ String.sub s 2 (String.length s - 2))
+  else if is_octal_int_12 s then
+    Int64.of_string ("0o" ^ String.sub s 2 (String.length s - 2))
+  else if is_octal_int_11 s then
+    Int64.of_string ("0o" ^ String.sub s 1 (String.length s - 1))
+  else
+    match parse_sexagesimal_int s with
+    | Some n -> n
+    | None -> Int64.of_string s
+
+let resolve_scalar ~schema ~reject_ambiguous ~(loc : loc)
+    ~(explicit_tag : string option) ~(style : scalar_style) ~(value : string) :
+    Types.value =
+  let tag = effective_tag ~schema ~explicit_tag ~style ~value in
   if tag = null_tag then Null loc
-  else if tag = bool_tag then Bool (loc, is_true_str value)
+  else if tag = bool_tag then
+    let b =
+      match schema with
+      | Yaml_1_2 -> is_true_str_12 value
+      | Yaml_1_1 -> is_true_str_11 value
+    in
+    Bool (loc, b)
   else if tag = int_tag then
+    let parse_int =
+      match schema with
+      | Yaml_1_2 -> parse_int_12
+      | Yaml_1_1 -> parse_int_11
+    in
     try Int (loc, parse_int value) with
     | _ -> String (loc, value)
   else if tag = float_tag then
-    match try_float value with
+    let f =
+      match try_float_12 value with
+      | Some f -> Some f
+      | None -> (
+          match schema with
+          | Yaml_1_2 -> None
+          | Yaml_1_1 -> parse_sexagesimal_float value)
+    in
+    match f with
     | Some f -> Float (loc, f)
     | None -> String (loc, value)
-  else if tag = str_tag then String (loc, value)
-  else
-    (* Unknown tag: pass through as string *)
-    String (loc, value)
+  else if tag = str_tag then (
+    (* In 1.2 + reject_ambiguous mode, flag scalars that 1.1 would read differently *)
+    (if reject_ambiguous && style = Plain && explicit_tag = None then
+       match ambiguity_message value with
+       | Some msg -> raise (Types.Error (Types.Schema_error msg))
+       | None -> ());
+    String (loc, value))
+  else String (loc, value)
+
+(* ------------------------------------------------------------------ *)
+(* Schema conflict detection                                             *)
+(* ------------------------------------------------------------------ *)
+
+(** Determine the effective schema for a document. [requested] is what the
+    caller specified; [doc_version] is the document's [%YAML] directive. Raises
+    [Schema_error] when [strict_schema = true] and they conflict. *)
+let effective_schema ~strict_schema ~(requested : schema)
+    (doc_version : (int * int) option) : schema =
+  match doc_version with
+  | None -> requested
+  | Some (major, minor) ->
+      let doc_schema =
+        if major = 1 && minor = 1 then Yaml_1_1
+        else if major = 1 && minor >= 2 then Yaml_1_2
+        else requested (* unknown version: fall back to requested *)
+      in
+      if strict_schema && doc_schema <> requested then
+        raise
+          (Types.Error
+             (Types.Schema_error
+                (Printf.sprintf
+                   "document declares %%YAML %d.%d but the requested schema is \
+                    %s"
+                   major minor
+                   (match requested with
+                   | Yaml_1_2 -> "YAML 1.2"
+                   | Yaml_1_1 -> "YAML 1.1"))))
+      else doc_schema
+
+(* ------------------------------------------------------------------ *)
+(* Merge key expansion (YAML 1.1)                                       *)
+(* ------------------------------------------------------------------ *)
+
+(** True when [node] is the plain scalar [<<] (or tagged [!!merge]), i.e. a YAML
+    1.1 merge key. *)
+let is_merge_key_node = function
+  | Scalar_node { value = "<<"; style = Plain; tag = None; _ } -> true
+  | Scalar_node { tag = Some t; _ } when t = yaml_prefix ^ "merge" -> true
+  | _ -> false
+
+(** Equality on resolved values, location-independent, used for deduplication
+    when merging. Delegates to the existing [equal_value] in YAMLx but we cannot
+    call back up the stack here, so we inline a structural comparison. *)
+let rec equal_val a b =
+  match (a, b) with
+  | Null _, Null _ -> true
+  | Bool (_, x), Bool (_, y) -> x = y
+  | Int (_, x), Int (_, y) -> Int64.equal x y
+  | Float (_, x), Float (_, y) -> Float.equal x y
+  | String (_, x), String (_, y) -> x = y
+  | Seq (_, xs), Seq (_, ys) -> List.equal equal_val xs ys
+  | Map (_, ps), Map (_, qs) ->
+      List.equal
+        (fun (_, k1, v1) (_, k2, v2) -> equal_val k1 k2 && equal_val v1 v2)
+        ps qs
+  | _ -> false
+
+(** Expand a resolved merge value into a list of [(loc, key, value)] triples. A
+    merge value must be a [Map] (or a [Seq] of [Map]s); anything else is
+    silently ignored. *)
+let expand_merge_value = function
+  | Map (_, pairs) -> pairs
+  | Seq (_, items) ->
+      List.concat_map
+        (function
+          | Map (_, pairs) -> pairs
+          | _ -> [])
+        items
+  | _ -> []
 
 (* ------------------------------------------------------------------ *)
 (* Full node resolution                                                  *)
 (* ------------------------------------------------------------------ *)
 
-(** Increment [counter] and raise {!Types.Error} [(Expansion_limit_exceeded _)]
-    if it exceeds [limit]. *)
 let tick ~limit ~counter =
   incr counter;
   if !counter > limit then
     raise (Types.Error (Types.Expansion_limit_exceeded limit))
 
-(** Extract the [loc] from any node variant. *)
 let node_loc : Types.node -> Types.loc = function
   | Scalar_node r -> r.loc
   | Sequence_node r -> r.loc
   | Mapping_node r -> r.loc
   | Alias_node r -> r.loc
 
-(** Resolve an entire node tree into a [value] tree. [counter] tracks the total
-    number of nodes visited across the whole traversal; [limit] is the upper
-    bound. *)
-let rec resolve_node ~limit ~counter (node : Types.node) : Types.value =
+let rec resolve_node ~schema ~reject_ambiguous ~limit ~counter
+    (node : Types.node) : Types.value =
   tick ~limit ~counter;
   match node with
   | Scalar_node { tag; value; style; loc; _ } ->
-      resolve_scalar ~loc ~explicit_tag:tag ~style ~value
+      resolve_scalar ~schema ~reject_ambiguous ~loc ~explicit_tag:tag ~style
+        ~value
   | Sequence_node { items; loc; _ } ->
-      Seq (loc, List_ext.map (resolve_node ~limit ~counter) items)
-  | Mapping_node { pairs; loc; _ } ->
-      Map
+      Seq
         ( loc,
           List_ext.map
-            (fun (k, v) ->
-              let pair_loc =
-                Types.
+            (resolve_node ~schema ~reject_ambiguous ~limit ~counter)
+            items )
+  | Mapping_node { pairs; loc; _ } -> (
+      let resolve = resolve_node ~schema ~reject_ambiguous ~limit ~counter in
+      match schema with
+      | Yaml_1_2 ->
+          (* In 1.2 mode, check for merge keys when reject_ambiguous is set *)
+          Map
+            ( loc,
+              List_ext.map
+                (fun (k, v) ->
+                  let pair_loc =
+                    {
+                      start_pos = (node_loc k).start_pos;
+                      end_pos = (node_loc v).end_pos;
+                    }
+                  in
+                  let k' = resolve k in
+                  (* Flag <<  as ambiguous if requested *)
+                  if
+                    reject_ambiguous
+                    &&
+                    match k with
+                    | Scalar_node { value = "<<"; style = Plain; tag = None; _ }
+                      ->
+                        true
+                    | _ -> false
+                  then
+                    raise
+                      (Types.Error
+                         (Types.Schema_error
+                            "mapping key \"<<\" is a merge key in YAML 1.1 but \
+                             a plain string in YAML 1.2"))
+                  else (pair_loc, k', resolve v))
+                pairs )
+      | Yaml_1_1 ->
+          (* Separate merge-key pairs from regular pairs *)
+          let regular =
+            List.filter (fun (k, _) -> not (is_merge_key_node k)) pairs
+          in
+          let merge_nodes =
+            List.filter_map
+              (fun (k, v) -> if is_merge_key_node k then Some v else None)
+              pairs
+          in
+          (* Resolve regular pairs *)
+          let reg_resolved =
+            List_ext.map
+              (fun (k, v) ->
+                let pair_loc =
                   {
                     start_pos = (node_loc k).start_pos;
                     end_pos = (node_loc v).end_pos;
                   }
-              in
-              ( pair_loc,
-                resolve_node ~limit ~counter k,
-                resolve_node ~limit ~counter v ))
-            pairs )
-  | Alias_node { resolved; _ } -> resolve_node ~limit ~counter resolved
+                in
+                (pair_loc, resolve k, resolve v))
+              regular
+          in
+          (* Resolve merge values and expand *)
+          let merge_expanded =
+            List.concat_map
+              (fun mv -> expand_merge_value (resolve mv))
+              merge_nodes
+          in
+          (* Deduplicate: regular keys win; among merged, earlier wins *)
+          let defined = List.map (fun (_, k, _) -> k) reg_resolved in
+          let seen = ref defined in
+          let extra =
+            List.filter
+              (fun (_, k, _) ->
+                if List.exists (equal_val k) !seen then false
+                else (
+                  seen := k :: !seen;
+                  true))
+              merge_expanded
+          in
+          Map (loc, reg_resolved @ extra))
+  | Alias_node { resolved; _ } ->
+      resolve_node ~schema ~reject_ambiguous ~limit ~counter resolved
 
 let resolve_documents ?(expansion_limit = Types.default_expansion_limit)
-    (nodes : Types.node list) : Types.value list =
+    ?(schema = Yaml_1_2) ?(strict_schema = false) ?(reject_ambiguous = false)
+    (versioned_nodes : ((int * int) option * Types.node) list) :
+    Types.value list =
   let counter = ref 0 in
-  List_ext.map (resolve_node ~limit:expansion_limit ~counter) nodes
+  List_ext.map
+    (fun (doc_version, node) ->
+      let eff_schema =
+        effective_schema ~strict_schema ~requested:schema doc_version
+      in
+      resolve_node ~schema:eff_schema ~reject_ambiguous ~limit:expansion_limit
+        ~counter node)
+    versioned_nodes

@@ -24,6 +24,15 @@ type pos = {
     the same way. *)
 
 val zero_pos : pos
+(** YAML schema used to resolve plain scalars to typed values. *)
+type schema =
+  | Yaml_1_2
+      (** YAML 1.2 JSON schema (the default). Booleans are only [true]/[false];
+          octal uses [0o…] prefix; sexagesimal notation is not recognised. *)
+  | Yaml_1_1
+      (** YAML 1.1 schema. Adds extended booleans ([yes]/[no]/[on]/[off] etc.),
+          [0…] octal, sexagesimal integers and floats, and merge-key ([<<])
+          expansion. Use this to read legacy YAML files. *)
 
 type loc = { start_pos : pos; end_pos : pos }
 (** A source range: [start_pos] is the first character of the node; [end_pos] is
@@ -40,6 +49,7 @@ type error =
   | Depth_limit_exceeded of int
   | Plain_error of string
   | Document_count_error of string
+  | Schema_error of string
 
 exception Error of error
 
