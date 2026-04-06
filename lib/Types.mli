@@ -24,6 +24,9 @@ type pos = {
     the same way. *)
 
 val zero_pos : pos
+(** A {!pos} value with all fields set to zero. Useful as a placeholder when no
+    actual source location is available. *)
+
 (** YAML schema used to resolve plain scalars to typed values. *)
 type schema =
   | Yaml_1_2
