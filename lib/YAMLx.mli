@@ -260,11 +260,11 @@ module Nodes : sig
       exceeds [expansion_limit] (default: {!default_expansion_limit}). *)
 
   val to_plain_yaml_file :
-    ?strict:bool -> ?expansion_limit:int -> t -> string -> unit
+    ?strict:bool -> ?expansion_limit:int -> t -> string -> (unit, string) result
   (** [to_plain_yaml_file nodes path] serializes nodes to plain YAML (via
       {!to_plain_yaml_exn}) and writes the result to [path], overwriting any
-      existing file. Raises {!Error} on serialization failure and [Sys_error] on
-      file I/O failure. *)
+      existing file. Returns [Error msg] on serialization failure (same errors
+      as {!to_plain_yaml_exn}). Raises [Sys_error] on file I/O failure. *)
 end
 
 (** {1 Value operations} *)

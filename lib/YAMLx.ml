@@ -295,7 +295,9 @@ module Nodes = struct
     Printer.to_plain_yaml ?strict ?expansion_limit docs
 
   let to_plain_yaml_file ?strict ?expansion_limit nodes path =
-    write_file path (to_plain_yaml_exn ?strict ?expansion_limit nodes)
+    match catch_errors (fun () -> to_plain_yaml_exn ?strict ?expansion_limit nodes) with
+    | Error _ as e -> e
+    | Ok yaml -> write_file path yaml; Ok ()
 end
 
 (* ------------------------------------------------------------------ *)
