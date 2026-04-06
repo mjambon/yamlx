@@ -352,8 +352,7 @@ let resolve_scalar ~schema ~reject_ambiguous ~(loc : loc)
     (* In 1.2 + reject_ambiguous mode, flag scalars that 1.1 would read differently *)
     (if reject_ambiguous && style = Plain && explicit_tag = None then
        match ambiguity_message value with
-       | Some msg ->
-           raise (Types.Error (Types.Schema_error { msg; pos = loc.start_pos }))
+       | Some msg -> raise (Types.Error (Types.Schema_error { msg; loc }))
        | None -> ());
     String (loc, value))
   else String (loc, value)
@@ -363,10 +362,10 @@ let resolve_scalar ~schema ~reject_ambiguous ~(loc : loc)
 (* ------------------------------------------------------------------ *)
 
 (** Determine the effective schema for a document. [requested] is what the
-    caller specified; [doc_version] is the document's [%YAML] directive; [pos]
-    is the start position of the document content (used in error messages).
-    Raises [Schema_error] when [strict_schema = true] and they conflict. *)
-let effective_schema ~strict_schema ~(requested : schema) ~(pos : Types.pos)
+    caller specified; [doc_version] is the document's [%YAML] directive; [loc]
+    is the source range of the document content (used in error messages). Raises
+    [Schema_error] when [strict_schema = true] and they conflict. *)
+let effective_schema ~strict_schema ~(requested : schema) ~(loc : Types.loc)
     (doc_version : (int * int) option) : schema =
   match doc_version with
   | None -> requested
@@ -389,7 +388,7 @@ let effective_schema ~strict_schema ~(requested : schema) ~(pos : Types.pos)
                       (match requested with
                       | Yaml_1_2 -> "YAML 1.2"
                       | Yaml_1_1 -> "YAML 1.1");
-                  pos;
+                  loc;
                 }))
       else doc_schema
 
@@ -495,7 +494,7 @@ let rec resolve_node ~schema ~reject_ambiguous ~limit ~counter
                               msg =
                                 "mapping key \"<<\" is a merge key in YAML 1.1 \
                                  but a plain string in YAML 1.2";
-                              pos = (node_loc k).start_pos;
+                              loc = node_loc k;
                             }))
                   else (pair_loc, k', resolve v))
                 pairs )
@@ -552,8 +551,8 @@ let resolve_documents ?(expansion_limit = Types.default_expansion_limit)
   List_ext.map
     (fun (doc_version, node) ->
       let eff_schema =
-        effective_schema ~strict_schema ~requested:schema
-          ~pos:(node_loc node).start_pos doc_version
+        effective_schema ~strict_schema ~requested:schema ~loc:(node_loc node)
+          doc_version
       in
       resolve_node ~schema:eff_schema ~reject_ambiguous ~limit:expansion_limit
         ~counter node)

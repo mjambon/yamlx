@@ -31,7 +31,7 @@ type loc = { start_pos : pos; end_pos : pos }
 
 (** {1 Errors} *)
 
-type yaml_error = { msg : string; pos : pos }
+type yaml_error = { msg : string; loc : loc }
 
 type error =
   | Scan_error of yaml_error
@@ -84,10 +84,18 @@ type schema =
           expansion. Use this to read legacy YAML files. *)
 
 let scan_error pos fmt =
-  Printf.ksprintf (fun msg -> raise (Error (Scan_error { msg; pos }))) fmt
+  Printf.ksprintf
+    (fun msg ->
+      raise
+        (Error (Scan_error { msg; loc = { start_pos = pos; end_pos = pos } })))
+    fmt
 
 let parse_error pos fmt =
-  Printf.ksprintf (fun msg -> raise (Error (Parse_error { msg; pos }))) fmt
+  Printf.ksprintf
+    (fun msg ->
+      raise
+        (Error (Parse_error { msg; loc = { start_pos = pos; end_pos = pos } })))
+    fmt
 
 (** {1 Scalar styles} *)
 

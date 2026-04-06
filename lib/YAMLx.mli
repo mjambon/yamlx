@@ -81,7 +81,7 @@ type schema =
 
 (** {1 Errors} *)
 
-type yaml_error = { msg : string; pos : pos }
+type yaml_error = { msg : string; loc : loc }
 
 type error =
   | Scan_error of yaml_error

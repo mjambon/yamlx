@@ -62,12 +62,12 @@ let run_test_case (tc : Suite_loader.test_case) () =
           failwith
             (Printf.sprintf
                "[%s] %s: unexpected scan error at line %d col %d: %s" tc.id
-               tc.name e.pos.line e.pos.column e.msg)
+               tc.name e.loc.start_pos.line e.loc.start_pos.column e.msg)
       | exception YAMLx.Error (YAMLx.Parse_error e) ->
           failwith
             (Printf.sprintf
                "[%s] %s: unexpected parse error at line %d col %d: %s" tc.id
-               tc.name e.pos.line e.pos.column e.msg)
+               tc.name e.loc.start_pos.line e.loc.start_pos.column e.msg)
       | evs -> evs
     in
     (* Only compare against the expected tree if one is given *)

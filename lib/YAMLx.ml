@@ -21,7 +21,7 @@ type pos = Types.pos = {
 type loc = Types.loc = { start_pos : pos; end_pos : pos }
 [@@deriving show { with_path = false }]
 
-type yaml_error = Types.yaml_error = { msg : string; pos : pos }
+type yaml_error = Types.yaml_error = { msg : string; loc : loc }
 [@@deriving show { with_path = false }]
 
 type scalar_style = Types.scalar_style =
@@ -221,7 +221,8 @@ let default_max_depth = Types.default_max_depth
 (* ------------------------------------------------------------------ *)
 
 let string_of_error (e : yaml_error) : string =
-  Printf.sprintf "line %d, column %d: %s" e.pos.line e.pos.column e.msg
+  Printf.sprintf "line %d, column %d: %s" e.loc.start_pos.line
+    e.loc.start_pos.column e.msg
 
 let read_file path =
   let ic = open_in path in
