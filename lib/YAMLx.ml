@@ -220,9 +220,25 @@ let default_max_depth = Types.default_max_depth
 (* Error formatting                                                      *)
 (* ------------------------------------------------------------------ *)
 
+let default_format_loc ?file (loc : loc) : string =
+  let ({ start_pos; end_pos } : loc) = loc in
+  let loc_str =
+    if start_pos.line = end_pos.line then
+      if start_pos.column = end_pos.column then
+        Printf.sprintf "line %d, column %d" start_pos.line start_pos.column
+      else
+        Printf.sprintf "line %d, columns %d-%d" start_pos.line start_pos.column
+          end_pos.column
+    else
+      Printf.sprintf "lines %d-%d, columns %d-%d" start_pos.line end_pos.line
+        start_pos.column end_pos.column
+  in
+  match file with
+  | None -> loc_str
+  | Some f -> "file " ^ f ^ ", " ^ loc_str
+
 let string_of_error (e : yaml_error) : string =
-  Printf.sprintf "line %d, column %d: %s" e.loc.start_pos.line
-    e.loc.start_pos.column e.msg
+  default_format_loc e.loc ^ ": " ^ e.msg
 
 let read_file path =
   let ic = open_in path in
@@ -234,11 +250,12 @@ let read_file path =
       really_input ic s 0 n;
       Bytes.to_string s)
 
-let catch_errors ?file f =
-  let pos_error prefix e =
+let catch_errors ?file ?(format_loc = default_format_loc) f =
+  let pos_error kind e =
+    let loc_str = format_loc ?file e.loc in
     match file with
-    | None -> prefix ^ string_of_error e
-    | Some path -> Printf.sprintf "file %s, %s" path (string_of_error e)
+    | None -> kind ^ ": " ^ loc_str ^ ": " ^ e.msg
+    | Some _ -> loc_str ^ ": " ^ e.msg
   in
   let other_error msg =
     match file with
@@ -246,8 +263,8 @@ let catch_errors ?file f =
     | Some path -> "file " ^ path ^ ": " ^ msg
   in
   try Ok (f ()) with
-  | Error (Scan_error e) -> Result.Error (pos_error "scan error: " e)
-  | Error (Parse_error e) -> Result.Error (pos_error "parse error: " e)
+  | Error (Scan_error e) -> Result.Error (pos_error "scan error" e)
+  | Error (Parse_error e) -> Result.Error (pos_error "parse error" e)
   | Error (Expansion_limit_exceeded n) ->
       Result.Error
         (other_error (Printf.sprintf "expansion limit exceeded (%d nodes)" n))
@@ -258,14 +275,14 @@ let catch_errors ?file f =
       Result.Error (other_error ("plain error: " ^ msg))
   | Error (Document_count_error msg) ->
       Result.Error (other_error ("document count error: " ^ msg))
-  | Error (Schema_error e) -> Result.Error (pos_error "schema error: " e)
+  | Error (Schema_error e) -> Result.Error (pos_error "schema error" e)
 
-let register_exception_printers () =
+let register_exception_printers ?(format_loc = default_format_loc) () =
   Printexc.register_printer (function
     | Error (Scan_error e) ->
-        Some ("YAMLx.Error (Scan_error): " ^ string_of_error e)
+        Some ("YAMLx.Error (Scan_error): " ^ format_loc e.loc ^ ": " ^ e.msg)
     | Error (Parse_error e) ->
-        Some ("YAMLx.Error (Parse_error): " ^ string_of_error e)
+        Some ("YAMLx.Error (Parse_error): " ^ format_loc e.loc ^ ": " ^ e.msg)
     | Error (Expansion_limit_exceeded n) ->
         Some (Printf.sprintf "YAMLx.Error (Expansion_limit_exceeded %d)" n)
     | Error (Depth_limit_exceeded n) ->
@@ -274,7 +291,7 @@ let register_exception_printers () =
     | Error (Document_count_error msg) ->
         Some ("YAMLx.Error (Document_count_error): " ^ msg)
     | Error (Schema_error e) ->
-        Some ("YAMLx.Error (Schema_error): " ^ string_of_error e)
+        Some ("YAMLx.Error (Schema_error): " ^ format_loc e.loc ^ ": " ^ e.msg)
     | _ -> None)
 
 (* ------------------------------------------------------------------ *)

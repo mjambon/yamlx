@@ -121,15 +121,42 @@ exception Error of error
       | exception YAMLx.Error _ -> ...
     ]} *)
 
-val catch_errors : ?file:string -> (unit -> 'a) -> ('a, string) result
-(** Catch {!Error} and return [Ok _] or [Error msg]. When [~file] is given it is
-    prepended to every error message: positional errors (scan/parse) become
-    ["file foo.yaml, line L, column C: msg"] and non-positional errors become
-    ["file foo.yaml: msg"]. *)
+val default_format_loc : ?file:string -> loc -> string
+(** Default location formatter used by {!catch_errors} and
+    {!register_exception_printers}.
 
-val register_exception_printers : unit -> unit
+    The output format depends on the extent of [loc]:
+    - Zero-width (start = end): ["line 3, column 8"]
+    - Single-line range: ["line 3, columns 8-11"]
+    - Multi-line range: ["lines 3-12, columns 8-4"]
+
+    When [~file] is given, a ["file <name>, "] prefix is prepended, e.g.
+    ["file foo.yaml, line 3, columns 8-11"].
+
+    Columns are 0-based Unicode codepoint offsets from the start of the line,
+    matching the {!pos} fields [column] (not [column_bytes]). *)
+
+val catch_errors :
+  ?file:string ->
+  ?format_loc:(?file:string -> loc -> string) ->
+  (unit -> 'a) ->
+  ('a, string) result
+(** Catch {!Error} and return [Ok _] or [Error msg].
+
+    When [~file] is given it is prepended to every error message: positional
+    errors (scan/parse/schema) become
+    ["file foo.yaml, line L, columns C1-C2: msg"] and non-positional errors
+    become ["file foo.yaml: msg"].
+
+    [~format_loc] overrides how source locations are formatted (default:
+    {!default_format_loc}). Provide a custom implementation to adapt the output
+    for editors, LSP servers, or structured logging. *)
+
+val register_exception_printers :
+  ?format_loc:(?file:string -> loc -> string) -> unit -> unit
 (** Register a printer for {!Error} so it displays legibly in uncaught-exception
-    output. *)
+    output. [~format_loc] overrides location formatting (default:
+    {!default_format_loc}). *)
 
 val default_expansion_limit : int
 (** Default node-visit budget for alias expansion (1,000,000). *)
@@ -138,7 +165,8 @@ val default_max_depth : int
 (** Default maximum nesting depth (512). *)
 
 val string_of_error : yaml_error -> string
-(** Format a {!yaml_error} as ["line L, column C: message"]. *)
+(** Format a {!yaml_error} using {!default_format_loc} followed by
+    [": message"]. Equivalent to [default_format_loc e.loc ^ ": " ^ e.msg]. *)
 
 (** {1 Scalar styles} *)
 
