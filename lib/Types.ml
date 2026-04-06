@@ -54,7 +54,7 @@ type error =
   | Document_count_error of string
       (** The input contained the wrong number of documents for a
           single-document operation. *)
-  | Schema_error of string
+  | Schema_error of yaml_error
       (** A schema conflict was detected: either the document's [%YAML]
           directive disagrees with the requested schema (when
           [~strict_schema:true]), or a plain scalar is ambiguous between YAML

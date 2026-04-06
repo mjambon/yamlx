@@ -352,7 +352,8 @@ let resolve_scalar ~schema ~reject_ambiguous ~(loc : loc)
     (* In 1.2 + reject_ambiguous mode, flag scalars that 1.1 would read differently *)
     (if reject_ambiguous && style = Plain && explicit_tag = None then
        match ambiguity_message value with
-       | Some msg -> raise (Types.Error (Types.Schema_error msg))
+       | Some msg ->
+           raise (Types.Error (Types.Schema_error { msg; pos = loc.start_pos }))
        | None -> ());
     String (loc, value))
   else String (loc, value)
@@ -362,9 +363,10 @@ let resolve_scalar ~schema ~reject_ambiguous ~(loc : loc)
 (* ------------------------------------------------------------------ *)
 
 (** Determine the effective schema for a document. [requested] is what the
-    caller specified; [doc_version] is the document's [%YAML] directive. Raises
-    [Schema_error] when [strict_schema = true] and they conflict. *)
-let effective_schema ~strict_schema ~(requested : schema)
+    caller specified; [doc_version] is the document's [%YAML] directive; [pos]
+    is the start position of the document content (used in error messages).
+    Raises [Schema_error] when [strict_schema = true] and they conflict. *)
+let effective_schema ~strict_schema ~(requested : schema) ~(pos : Types.pos)
     (doc_version : (int * int) option) : schema =
   match doc_version with
   | None -> requested
@@ -378,13 +380,17 @@ let effective_schema ~strict_schema ~(requested : schema)
         raise
           (Types.Error
              (Types.Schema_error
-                (Printf.sprintf
-                   "document declares %%YAML %d.%d but the requested schema is \
-                    %s"
-                   major minor
-                   (match requested with
-                   | Yaml_1_2 -> "YAML 1.2"
-                   | Yaml_1_1 -> "YAML 1.1"))))
+                {
+                  msg =
+                    Printf.sprintf
+                      "document declares %%YAML %d.%d but the requested schema \
+                       is %s"
+                      major minor
+                      (match requested with
+                      | Yaml_1_2 -> "YAML 1.2"
+                      | Yaml_1_1 -> "YAML 1.1");
+                  pos;
+                }))
       else doc_schema
 
 (* ------------------------------------------------------------------ *)
@@ -485,8 +491,12 @@ let rec resolve_node ~schema ~reject_ambiguous ~limit ~counter
                     raise
                       (Types.Error
                          (Types.Schema_error
-                            "mapping key \"<<\" is a merge key in YAML 1.1 but \
-                             a plain string in YAML 1.2"))
+                            {
+                              msg =
+                                "mapping key \"<<\" is a merge key in YAML 1.1 \
+                                 but a plain string in YAML 1.2";
+                              pos = (node_loc k).start_pos;
+                            }))
                   else (pair_loc, k', resolve v))
                 pairs )
       | Yaml_1_1 ->
@@ -542,7 +552,8 @@ let resolve_documents ?(expansion_limit = Types.default_expansion_limit)
   List_ext.map
     (fun (doc_version, node) ->
       let eff_schema =
-        effective_schema ~strict_schema ~requested:schema doc_version
+        effective_schema ~strict_schema ~requested:schema
+          ~pos:(node_loc node).start_pos doc_version
       in
       resolve_node ~schema:eff_schema ~reject_ambiguous ~limit:expansion_limit
         ~counter node)

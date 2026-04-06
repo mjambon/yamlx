@@ -52,7 +52,7 @@ type error =
   | Depth_limit_exceeded of int
   | Plain_error of string
   | Document_count_error of string
-  | Schema_error of string
+  | Schema_error of yaml_error
 
 exception Error of error
 

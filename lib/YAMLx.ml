@@ -208,7 +208,7 @@ type error = Types.error =
   | Depth_limit_exceeded of int
   | Plain_error of string
   | Document_count_error of string
-  | Schema_error of string
+  | Schema_error of yaml_error
 [@@deriving show { with_path = false }]
 
 exception Error = Types.Error
@@ -257,8 +257,7 @@ let catch_errors ?file f =
       Result.Error (other_error ("plain error: " ^ msg))
   | Error (Document_count_error msg) ->
       Result.Error (other_error ("document count error: " ^ msg))
-  | Error (Schema_error msg) ->
-      Result.Error (other_error ("schema error: " ^ msg))
+  | Error (Schema_error e) -> Result.Error (pos_error "schema error: " e)
 
 let register_exception_printers () =
   Printexc.register_printer (function
@@ -273,7 +272,8 @@ let register_exception_printers () =
     | Error (Plain_error msg) -> Some ("YAMLx.Error (Plain_error): " ^ msg)
     | Error (Document_count_error msg) ->
         Some ("YAMLx.Error (Document_count_error): " ^ msg)
-    | Error (Schema_error msg) -> Some ("YAMLx.Error (Schema_error): " ^ msg)
+    | Error (Schema_error e) ->
+        Some ("YAMLx.Error (Schema_error): " ^ string_of_error e)
     | _ -> None)
 
 (* ------------------------------------------------------------------ *)
