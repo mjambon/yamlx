@@ -55,14 +55,14 @@ type parse_state =
   | Parse_flow_sequence_first_entry
   | Parse_flow_sequence_entry
   | Parse_flow_sequence_need_separator
-      (** after an entry: requires ',' or ']' *)
+      (** after an entry: requires [','] or ['\]'] *)
   | Parse_flow_sequence_entry_mapping_key
   | Parse_flow_sequence_entry_mapping_value
   | Parse_flow_sequence_entry_mapping_end
   | Parse_flow_mapping_first_key
   | Parse_flow_mapping_key
   | Parse_flow_mapping_need_separator
-      (** after a key-value pair: requires ',' or '}' *)
+      (** after a key-value pair: requires [','] or ['\}'] *)
   | Parse_flow_mapping_value
   | Parse_end
 

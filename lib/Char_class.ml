@@ -29,9 +29,9 @@ let is_blank cp = cp = 0x20 || cp = 0x09
 (** True for white space or a line break. *)
 let is_white cp = is_blank cp || is_linebreak cp
 
-(** True if the character may begin an anchor or alias name.
-    Per YAML 1.2 §7.2.2: everything except flow indicators, whitespace and
-    the special characters [\], [,], [#]. *)
+(** True if the character may begin an anchor or alias name. Per YAML 1.2
+    §7.2.2: everything except flow indicators, whitespace and the special
+    characters '\[', '\]', [,], [#]. *)
 let is_anchor_char cp =
   cp > 0x20 && cp <> 0x2C (* , *) && cp <> 0x5B
   (* [ *) && cp <> 0x5D (* ] *)
