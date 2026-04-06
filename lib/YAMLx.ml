@@ -148,7 +148,7 @@ let rec equal_value a b =
   | Null _, Null _ -> true
   | Bool (_, x), Bool (_, y) -> x = y
   | Int (_, x), Int (_, y) -> Int64.equal x y
-  | Float (_, x), Float (_, y) -> x = y
+  | Float (_, x), Float (_, y) -> Float.equal x y
   | String (_, x), String (_, y) -> x = y
   | Seq (_, xs), Seq (_, ys) -> List.equal equal_value xs ys
   | Map (_, ps), Map (_, qs) ->
@@ -378,9 +378,9 @@ let format_float (f : float) : string =
     then s
     else s ^ ".0"
 
-let no_loc =
-  let z = Types.pos_zero in
-  { Types.start_pos = z; end_pos = z }
+let zero_pos = Types.pos_zero
+let zero_loc = { Types.start_pos = zero_pos; end_pos = zero_pos }
+let no_loc = zero_loc
 
 let make_scalar ?(style = Types.Plain) value : node =
   Scalar_node

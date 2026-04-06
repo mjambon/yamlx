@@ -49,6 +49,16 @@ type loc = { start_pos : pos; end_pos : pos } [@@deriving show]
 (** A source range. [start_pos] is the first character of the node; [end_pos] is
     the position immediately after the last character. *)
 
+val zero_pos : pos
+(** The position at the very start of an empty input: [line=1], [column=0],
+    [offset=0], all byte fields [0]. Useful for constructing nodes
+    programmatically when source positions are not meaningful. *)
+
+val zero_loc : loc
+(** A zero-length location at the start of an empty input: both [start_pos] and
+    [end_pos] equal {!zero_pos}. Useful for constructing nodes programmatically
+    when source locations are not meaningful. *)
+
 (** {1 Errors} *)
 
 type yaml_error = { msg : string; pos : pos }
