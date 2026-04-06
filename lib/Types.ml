@@ -23,7 +23,7 @@ type pos = {
     [offset_bytes] are absolute distances from the start of the input, measured
     the same way. *)
 
-let pos_zero =
+let zero_pos =
   { line = 1; column = 0; column_bytes = 0; offset = 0; offset_bytes = 0 }
 
 type loc = { start_pos : pos; end_pos : pos }

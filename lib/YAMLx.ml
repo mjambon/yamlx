@@ -378,7 +378,7 @@ let format_float (f : float) : string =
     then s
     else s ^ ".0"
 
-let zero_pos = Types.pos_zero
+let zero_pos = Types.zero_pos
 let zero_loc = { Types.start_pos = zero_pos; end_pos = zero_pos }
 let no_loc = zero_loc
 

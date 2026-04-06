@@ -23,7 +23,7 @@ type pos = {
     [offset_bytes] are absolute distances from the start of the input, measured
     the same way. *)
 
-val pos_zero : pos
+val zero_pos : pos
 
 type loc = { start_pos : pos; end_pos : pos }
 (** A source range: [start_pos] is the first character of the node; [end_pos] is

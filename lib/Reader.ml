@@ -142,16 +142,16 @@ let check_encoding (s : string) : unit =
   (* Check 4-byte BOMs first (UTF-32 LE starts with the same two bytes as
      UTF-16 LE, so the longer pattern must win). *)
   if b 0 = 0x00 && b 1 = 0x00 && b 2 = 0xFE && b 3 = 0xFF then
-    Types.scan_error Types.pos_zero
+    Types.scan_error Types.zero_pos
       "input appears to be UTF-32 BE (BOM detected); only UTF-8 is supported"
   else if b 0 = 0xFF && b 1 = 0xFE && b 2 = 0x00 && b 3 = 0x00 then
-    Types.scan_error Types.pos_zero
+    Types.scan_error Types.zero_pos
       "input appears to be UTF-32 LE (BOM detected); only UTF-8 is supported"
   else if b 0 = 0xFE && b 1 = 0xFF then
-    Types.scan_error Types.pos_zero
+    Types.scan_error Types.zero_pos
       "input appears to be UTF-16 BE (BOM detected); only UTF-8 is supported"
   else if b 0 = 0xFF && b 1 = 0xFE then
-    Types.scan_error Types.pos_zero
+    Types.scan_error Types.zero_pos
       "input appears to be UTF-16 LE (BOM detected); only UTF-8 is supported"
 
 (** Create a Reader from a UTF-8 string. *)
