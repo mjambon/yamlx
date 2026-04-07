@@ -130,5 +130,6 @@ threshold receive an immediate **commercial license**. See
 ## References
 
 - [YAML 1.2 specification (1.2.2)](https://yaml.org/spec/1.2.2/)
+- [YAML 1.1 specification (1.1)](https://yaml.org/spec/1.1/)
 - Anil Madhavapeddy's [AoAH Day 6: Getting a YAML 1.2 implementation
   in pure OCaml](https://anil.recoil.org/notes/aoah-2025-6)
