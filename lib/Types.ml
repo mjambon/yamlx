@@ -48,7 +48,7 @@ type error =
       (** YAML nesting depth exceeded the configured maximum during composition.
           The payload is the limit that was exceeded. See {!default_max_depth}.
       *)
-  | Plain_error of string
+  | Printer_error of string
       (** A feature unsupported by the plain-YAML printer was encountered (e.g.
           a tag, a complex mapping key). *)
   | Document_count_error of string

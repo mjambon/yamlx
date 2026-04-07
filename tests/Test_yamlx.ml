@@ -1007,20 +1007,20 @@ let yaml_1_1_tests () =
     ]
 
 (* ------------------------------------------------------------------ *)
-(* Simple-mode tests                                                     *)
+(* Plain-mode tests                                                      *)
 (* ------------------------------------------------------------------ *)
 
-let simple_mode_tests () =
+let plain_mode_tests () =
   let check_ok label yaml () =
-    ignore (YAMLx.Values.of_yaml_exn ~simple:true yaml);
+    ignore (YAMLx.Values.of_yaml_exn ~plain:true yaml);
     ignore label
   in
   let check_simplicity_error label yaml () =
-    match YAMLx.Values.of_yaml_exn ~simple:true yaml with
+    match YAMLx.Values.of_yaml_exn ~plain:true yaml with
     | exception YAMLx.Error (YAMLx.Simplicity_error _) -> ()
     | _ -> failwith (label ^ ": expected Simplicity_error")
   in
-  let cat = [ "simple-mode" ] in
+  let cat = [ "plain-mode" ] in
   [
     Testo.create ~category:cat "plain scalar accepted" (check_ok "plain" "42");
     Testo.create ~category:cat "plain mapping accepted"
@@ -1041,7 +1041,7 @@ let simple_mode_tests () =
     Testo.create ~category:cat
       "merge key in YAML 1.1 raises Simplicity_error" (fun () ->
         match
-          YAMLx.Values.of_yaml_exn ~schema:YAMLx.Yaml_1_1 ~simple:true
+          YAMLx.Values.of_yaml_exn ~schema:YAMLx.Yaml_1_1 ~plain:true
             "- &base\n  x: 1\n- <<: *base\n  y: 2"
         with
         | exception YAMLx.Error (YAMLx.Simplicity_error _) -> ()
@@ -1049,7 +1049,7 @@ let simple_mode_tests () =
     Testo.create ~category:cat
       "merge key in YAML 1.2 accepted (it is a plain string key)" (fun () ->
         match
-          YAMLx.Values.of_yaml_exn ~schema:YAMLx.Yaml_1_2 ~simple:true
+          YAMLx.Values.of_yaml_exn ~schema:YAMLx.Yaml_1_2 ~plain:true
             "<<: value"
         with
         | [
@@ -1070,5 +1070,5 @@ let () =
       unit_tests () @ encoding_tests () @ roundtrip_tests () @ comment_tests ()
       @ anchor_tests () @ printer_tests () @ expansion_limit_tests ()
       @ depth_limit_tests () @ performance_tests () @ conversion_tests ()
-      @ duplicate_key_tests () @ yaml_1_1_tests () @ simple_mode_tests ()
+      @ duplicate_key_tests () @ yaml_1_1_tests () @ plain_mode_tests ()
       @ suite_tests ())

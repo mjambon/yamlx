@@ -20,7 +20,7 @@ val resolve_documents :
   ?schema:Types.schema ->
   ?strict_schema:bool ->
   ?reject_ambiguous:bool ->
-  ?simple:bool ->
+  ?plain:bool ->
   ((int * int) option * Types.node) list ->
   Types.value list
 (** Resolve a list of [(version, node)] pairs into typed values.
@@ -41,6 +41,6 @@ val resolve_documents :
     resolve differently under YAML 1.1 (only meaningful with
     [schema = Yaml_1_2], default: [false]).
 
-    [simple] raises {!Types.Simplicity_error} if any anchor, alias, or explicit
+    [plain] raises {!Types.Simplicity_error} if any anchor, alias, or explicit
     tag is encountered, or (in YAML 1.1 mode) if a merge key ([<<]) is
     encountered (default: [false]). *)

@@ -50,7 +50,7 @@ type error =
   | Parse_error of yaml_error
   | Expansion_limit_exceeded of int
   | Depth_limit_exceeded of int
-  | Plain_error of string
+  | Printer_error of string
   | Document_count_error of string
   | Schema_error of yaml_error
   | Simplicity_error of yaml_error

@@ -98,7 +98,7 @@ type error =
       (** YAML nesting depth exceeded the configured maximum during composition.
           The payload is the limit that was exceeded. See {!default_max_depth}.
       *)
-  | Plain_error of string
+  | Printer_error of string
       (** A feature unsupported by the plain-YAML printer was encountered (e.g.
           a tag, a complex mapping key). *)
   | Document_count_error of string
@@ -109,9 +109,9 @@ type error =
           requested schema (when [~strict_schema:true]), or a plain scalar is
           ambiguous between YAML 1.1 and 1.2 (when [~reject_ambiguous:true]). *)
   | Simplicity_error of yaml_error
-      (** A YAML feature not allowed in simple mode was encountered: an
+      (** A YAML feature not allowed in plain mode was encountered: an
           anchor, alias, explicit tag, or (in YAML 1.1 mode) a merge key
-          ([<<]). Raised when [~simple:true] is passed to {!Values} functions.
+          ([<<]). Raised when [~plain:true] is passed to {!Values} functions.
       *)
 
 exception Error of error
@@ -319,8 +319,8 @@ module Nodes : sig
   (** Like {!to_yaml} but produces a plain subset of YAML:
       - Aliases are expanded; anchor declarations are stripped.
       - Tags are stripped unless [~strict:true], in which case they raise
-        {!Error} [(Plain_error _)].
-      - Complex (non-scalar) mapping keys raise {!Error} [(Plain_error _)].
+        {!Error} [(Printer_error _)].
+      - Complex (non-scalar) mapping keys raise {!Error} [(Printer_error _)].
       - Flow collections are converted to block style.
 
       Raises {!Error} [(Expansion_limit_exceeded _)] when alias expansion
@@ -368,7 +368,7 @@ module Values : sig
     ?schema:schema ->
     ?strict_schema:bool ->
     ?reject_ambiguous:bool ->
-    ?simple:bool ->
+    ?plain:bool ->
     string ->
     (t, string) result
   (** Parse a YAML string and resolve each document to a typed value. Returns
@@ -384,7 +384,7 @@ module Values : sig
       differently under YAML 1.1 (e.g. [yes], [0755], sexagesimal, [<<] mapping
       keys).
 
-      [~simple:true] restricts input to plain YAML: raises {!Simplicity_error}
+      [~plain:true] restricts input to plain YAML: raises {!Simplicity_error}
       if any anchor, alias, or explicit tag is encountered, and (in YAML 1.1
       mode) if any merge key ([<<]) is encountered. *)
 
@@ -394,7 +394,7 @@ module Values : sig
     ?schema:schema ->
     ?strict_schema:bool ->
     ?reject_ambiguous:bool ->
-    ?simple:bool ->
+    ?plain:bool ->
     string ->
     (t, string) result
   (** Like {!of_yaml} but reads the YAML from the file at the given path.
@@ -407,7 +407,7 @@ module Values : sig
     ?schema:schema ->
     ?strict_schema:bool ->
     ?reject_ambiguous:bool ->
-    ?simple:bool ->
+    ?plain:bool ->
     string ->
     t
   (** Like {!of_yaml} but raises instead of returning a result.
@@ -419,14 +419,14 @@ module Values : sig
       [expansion_limit] (default: {!default_expansion_limit}),
       [(Schema_error _)] on schema conflicts (see [~strict_schema] and
       [~reject_ambiguous]),
-      [(Simplicity_error _)] on disallowed YAML features (see [~simple]). *)
+      [(Simplicity_error _)] on disallowed YAML features (see [~plain]). *)
 
   val of_nodes_exn :
     ?expansion_limit:int ->
     ?schema:schema ->
     ?strict_schema:bool ->
     ?reject_ambiguous:bool ->
-    ?simple:bool ->
+    ?plain:bool ->
     node list ->
     t
   (** Resolve a list of AST nodes to typed values. The [%YAML] version directive
@@ -435,14 +435,14 @@ module Values : sig
 
       Raises {!Error} [(Expansion_limit_exceeded _)] on excessive alias
       expansion, [(Schema_error _)] on ambiguity (see [~reject_ambiguous]),
-      [(Simplicity_error _)] on disallowed features (see [~simple]). *)
+      [(Simplicity_error _)] on disallowed features (see [~plain]). *)
 
   val of_nodes :
     ?expansion_limit:int ->
     ?schema:schema ->
     ?strict_schema:bool ->
     ?reject_ambiguous:bool ->
-    ?simple:bool ->
+    ?plain:bool ->
     node list ->
     (t, string) result
   (** Like {!of_nodes_exn} but returns [Ok values] on success or [Error msg] on
@@ -455,7 +455,7 @@ module Values : sig
     ?schema:schema ->
     ?strict_schema:bool ->
     ?reject_ambiguous:bool ->
-    ?simple:bool ->
+    ?plain:bool ->
     string ->
     (value, string) result
   (** Like {!one_of_yaml_exn} but returns [Ok v] on success or [Error msg] on
@@ -467,7 +467,7 @@ module Values : sig
     ?schema:schema ->
     ?strict_schema:bool ->
     ?reject_ambiguous:bool ->
-    ?simple:bool ->
+    ?plain:bool ->
     string ->
     (value, string) result
   (** Like {!one_of_yaml} but reads from a file. *)
@@ -478,7 +478,7 @@ module Values : sig
     ?schema:schema ->
     ?strict_schema:bool ->
     ?reject_ambiguous:bool ->
-    ?simple:bool ->
+    ?plain:bool ->
     string ->
     value
   (** Parse a YAML string expecting exactly one document and return its value.
