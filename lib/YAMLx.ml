@@ -125,6 +125,8 @@ let node_height : node -> int = function
   | Mapping_node r -> r.height
   | Alias_node r -> r.height
 
+let equal_value = Types.equal_value
+
 (** Compute the height of a value tree (maximum depth from root to leaf). Leaf
     values (Null, Bool, Int, Float, String) have height 1. *)
 let rec value_height : value -> int = function
@@ -141,21 +143,6 @@ let rec value_height : value -> int = function
       + List.fold_left
           (fun acc (_, k, v) -> max acc (max (value_height k) (value_height v)))
           0 pairs
-
-(** Structural equality that ignores source locations. *)
-let rec equal_value a b =
-  match (a, b) with
-  | Null _, Null _ -> true
-  | Bool (_, x), Bool (_, y) -> x = y
-  | Int (_, x), Int (_, y) -> Int64.equal x y
-  | Float (_, x), Float (_, y) -> Float.equal x y
-  | String (_, x), String (_, y) -> x = y
-  | Seq (_, xs), Seq (_, ys) -> List.equal equal_value xs ys
-  | Map (_, ps), Map (_, qs) ->
-      List.equal
-        (fun (_, k1, v1) (_, k2, v2) -> equal_value k1 k2 && equal_value v1 v2)
-        ps qs
-  | _ -> false
 
 (* ------------------------------------------------------------------ *)
 (* Internal pipeline wiring                                              *)

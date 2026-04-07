@@ -403,23 +403,6 @@ let is_merge_key_node = function
   | Scalar_node { tag = Some t; _ } when t = yaml_prefix ^ "merge" -> true
   | _ -> false
 
-(** Equality on resolved values, location-independent, used for deduplication
-    when merging. Delegates to the existing [equal_value] in YAMLx but we cannot
-    call back up the stack here, so we inline a structural comparison. *)
-let rec equal_val a b =
-  match (a, b) with
-  | Null _, Null _ -> true
-  | Bool (_, x), Bool (_, y) -> x = y
-  | Int (_, x), Int (_, y) -> Int64.equal x y
-  | Float (_, x), Float (_, y) -> Float.equal x y
-  | String (_, x), String (_, y) -> x = y
-  | Seq (_, xs), Seq (_, ys) -> List.equal equal_val xs ys
-  | Map (_, ps), Map (_, qs) ->
-      List.equal
-        (fun (_, k1, v1) (_, k2, v2) -> equal_val k1 k2 && equal_val v1 v2)
-        ps qs
-  | _ -> false
-
 (** Expand a resolved merge value into a list of [(loc, key, value)] triples. A
     merge value must be a [Map] (or a [Seq] of [Map]s); anything else is
     silently ignored. *)
@@ -432,6 +415,48 @@ let expand_merge_value = function
           | _ -> [])
         items
   | _ -> []
+
+(* ------------------------------------------------------------------ *)
+(* Key deduplication                                                     *)
+(* ------------------------------------------------------------------ *)
+
+(** A hashtable suitable for looking up simple keys in O(1) time and complex
+    keys in O(n) time. *)
+module Value_hashtbl = Hashtbl.Make (struct
+  type t = value
+
+  let equal = Types.equal_value
+
+  (** A hash function that works well for simple values and terribly for
+      sequences and maps. *)
+  let hash = function
+    | Null _ -> 7
+    | Bool (_, x) -> Hashtbl.hash x
+    | Int (_, x) -> Hashtbl.hash x
+    | Float (_, x) -> Hashtbl.hash x
+    | String (_, x) -> Hashtbl.hash x
+    | Seq (_, _xs) -> 8
+    | Map (_, _ps) -> 9
+end)
+
+(** Keep only the last occurrence of each key in a resolved pair list,
+    preserving the relative order of surviving entries.
+
+    Implemented by reversing, keeping the first occurrence of each key (= last
+    in the original), then reversing back. *)
+let dedup_keep_last pairs =
+  let rev = List.rev pairs in
+  let seen = Value_hashtbl.create 10 in
+  let deduped =
+    List.filter
+      (fun (_, k, _) ->
+        if Value_hashtbl.mem seen k then false
+        else (
+          Value_hashtbl.add seen k ();
+          true))
+      rev
+  in
+  List.rev deduped
 
 (* ------------------------------------------------------------------ *)
 (* Full node resolution                                                  *)
@@ -466,38 +491,39 @@ let rec resolve_node ~schema ~reject_ambiguous ~limit ~counter
       match schema with
       | Yaml_1_2 ->
           (* In 1.2 mode, check for merge keys when reject_ambiguous is set *)
-          Map
-            ( loc,
-              List_ext.map
-                (fun (k, v) ->
-                  let pair_loc =
-                    {
-                      start_pos = (node_loc k).start_pos;
-                      end_pos = (node_loc v).end_pos;
-                    }
-                  in
-                  let k' = resolve k in
-                  (* Flag <<  as ambiguous if requested *)
-                  if
-                    reject_ambiguous
-                    &&
-                    match k with
-                    | Scalar_node { value = "<<"; style = Plain; tag = None; _ }
-                      ->
-                        true
-                    | _ -> false
-                  then
-                    raise
-                      (Types.Error
-                         (Types.Schema_error
-                            {
-                              msg =
-                                "mapping key \"<<\" is a merge key in YAML 1.1 \
-                                 but a plain string in YAML 1.2";
-                              loc = node_loc k;
-                            }))
-                  else (pair_loc, k', resolve v))
-                pairs )
+          let pairs_resolved =
+            List_ext.map
+              (fun (k, v) ->
+                let pair_loc =
+                  {
+                    start_pos = (node_loc k).start_pos;
+                    end_pos = (node_loc v).end_pos;
+                  }
+                in
+                let k' = resolve k in
+                (* Flag <<  as ambiguous if requested *)
+                if
+                  reject_ambiguous
+                  &&
+                  match k with
+                  | Scalar_node { value = "<<"; style = Plain; tag = None; _ }
+                    ->
+                      true
+                  | _ -> false
+                then
+                  raise
+                    (Types.Error
+                       (Types.Schema_error
+                          {
+                            msg =
+                              "mapping key \"<<\" is a merge key in YAML 1.1 \
+                               but a plain string in YAML 1.2";
+                            loc = node_loc k;
+                          }))
+                else (pair_loc, k', resolve v))
+              pairs
+          in
+          Map (loc, dedup_keep_last pairs_resolved)
       | Yaml_1_1 ->
           (* Separate merge-key pairs from regular pairs *)
           let regular =
@@ -527,13 +553,15 @@ let rec resolve_node ~schema ~reject_ambiguous ~limit ~counter
               (fun mv -> expand_merge_value (resolve mv))
               merge_nodes
           in
+          (* Deduplicate regular pairs (last occurrence wins) *)
+          let reg_resolved = dedup_keep_last reg_resolved in
           (* Deduplicate: regular keys win; among merged, earlier wins *)
           let defined = List.map (fun (_, k, _) -> k) reg_resolved in
           let seen = ref defined in
           let extra =
             List.filter
               (fun (_, k, _) ->
-                if List.exists (equal_val k) !seen then false
+                if List.exists (Types.equal_value k) !seen then false
                 else (
                   seen := k :: !seen;
                   true))
