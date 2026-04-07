@@ -473,8 +473,8 @@ let node_loc : Types.node -> Types.loc = function
   | Mapping_node r -> r.loc
   | Alias_node r -> r.loc
 
-(** Raise [Simplicity_error] if [plain] is [true] and [node] uses an anchor,
-    is an alias, or has an explicit tag. *)
+(** Raise [Simplicity_error] if [plain] is [true] and [node] uses an anchor, is
+    an alias, or has an explicit tag. *)
 let check_simple ~plain (node : Types.node) =
   if plain then begin
     (* Check anchor *)
@@ -493,8 +493,8 @@ let check_simple ~plain (node : Types.node) =
               (Types.Simplicity_error
                  {
                    msg =
-                     Printf.sprintf
-                       "anchor '&%s' is not allowed in plain mode" name;
+                     Printf.sprintf "anchor '&%s' is not allowed in plain mode"
+                       name;
                    loc;
                  }))
      | None -> ());
@@ -506,8 +506,8 @@ let check_simple ~plain (node : Types.node) =
              (Types.Simplicity_error
                 {
                   msg =
-                    Printf.sprintf
-                      "alias '*%s' is not allowed in plain mode" name;
+                    Printf.sprintf "alias '*%s' is not allowed in plain mode"
+                      name;
                   loc;
                 }))
     | _ -> ());
@@ -526,8 +526,7 @@ let check_simple ~plain (node : Types.node) =
           (Types.Error
              (Types.Simplicity_error
                 {
-                  msg =
-                    Printf.sprintf "tag '%s' is not allowed in plain mode" t;
+                  msg = Printf.sprintf "tag '%s' is not allowed in plain mode" t;
                   loc;
                 }))
     | None -> ()
@@ -600,15 +599,13 @@ let rec resolve_node ~schema ~reject_ambiguous ~plain ~limit ~counter
           (* In plain mode, merge keys are not allowed *)
           (if plain && merge_nodes <> [] then
              let merge_k =
-               fst
-                 (List.find (fun (k, _) -> is_merge_key_node k) pairs)
+               fst (List.find (fun (k, _) -> is_merge_key_node k) pairs)
              in
              raise
                (Types.Error
                   (Types.Simplicity_error
                      {
-                       msg =
-                         "merge key '<<' is not allowed in plain mode";
+                       msg = "merge key '<<' is not allowed in plain mode";
                        loc = node_loc merge_k;
                      })));
           (* Resolve regular pairs *)
@@ -650,9 +647,8 @@ let rec resolve_node ~schema ~reject_ambiguous ~plain ~limit ~counter
 
 let resolve_documents ?(expansion_limit = Types.default_expansion_limit)
     ?(schema = Yaml_1_2) ?(strict_schema = false) ?(reject_ambiguous = false)
-    ?(plain = false)
-    (versioned_nodes : ((int * int) option * Types.node) list) :
-    Types.value list =
+    ?(plain = false) (versioned_nodes : ((int * int) option * Types.node) list)
+    : Types.value list =
   let counter = ref 0 in
   List_ext.map
     (fun (doc_version, node) ->

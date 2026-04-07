@@ -109,10 +109,9 @@ type error =
           requested schema (when [~strict_schema:true]), or a plain scalar is
           ambiguous between YAML 1.1 and 1.2 (when [~reject_ambiguous:true]). *)
   | Simplicity_error of yaml_error
-      (** A YAML feature not allowed in plain mode was encountered: an
-          anchor, alias, explicit tag, or (in YAML 1.1 mode) a merge key
-          ([<<]). Raised when [~plain:true] is passed to {!Values} functions.
-      *)
+      (** A YAML feature not allowed in plain mode was encountered: an anchor,
+          alias, explicit tag, or (in YAML 1.1 mode) a merge key ([<<]). Raised
+          when [~plain:true] is passed to {!Values} functions. *)
 
 exception Error of error
 (** The single exception raised by this library. Match on the payload to
@@ -384,9 +383,9 @@ module Values : sig
       differently under YAML 1.1 (e.g. [yes], [0755], sexagesimal, [<<] mapping
       keys).
 
-      [~plain:true] restricts input to plain YAML: raises {!Simplicity_error}
-      if any anchor, alias, or explicit tag is encountered, and (in YAML 1.1
-      mode) if any merge key ([<<]) is encountered. *)
+      [~plain:true] restricts input to plain YAML: raises {!Simplicity_error} if
+      any anchor, alias, or explicit tag is encountered, and (in YAML 1.1 mode)
+      if any merge key ([<<]) is encountered. *)
 
   val of_yaml_file :
     ?max_depth:int ->
@@ -418,8 +417,8 @@ module Values : sig
       [(Expansion_limit_exceeded _)] when alias expansion exceeds
       [expansion_limit] (default: {!default_expansion_limit}),
       [(Schema_error _)] on schema conflicts (see [~strict_schema] and
-      [~reject_ambiguous]),
-      [(Simplicity_error _)] on disallowed YAML features (see [~plain]). *)
+      [~reject_ambiguous]), [(Simplicity_error _)] on disallowed YAML features
+      (see [~plain]). *)
 
   val of_nodes_exn :
     ?expansion_limit:int ->

@@ -60,10 +60,9 @@ type error =
           [~strict_schema:true]), or a plain scalar is ambiguous between YAML
           1.1 and 1.2 (when [~reject_ambiguous:true]). *)
   | Simplicity_error of yaml_error
-      (** A YAML feature not allowed in simple mode was encountered: an
-          anchor, alias, explicit tag, or (in YAML 1.1 mode) a merge key
-          ([<<]). Raised when [~simple:true] is passed to resolver
-          functions. *)
+      (** A YAML feature not allowed in simple mode was encountered: an anchor,
+          alias, explicit tag, or (in YAML 1.1 mode) a merge key ([<<]). Raised
+          when [~simple:true] is passed to resolver functions. *)
 
 exception Error of error
 (** The single exception raised by this library. Match on the payload to

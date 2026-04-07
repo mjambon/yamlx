@@ -1030,16 +1030,15 @@ let plain_mode_tests () =
     Testo.create ~category:cat "anchor raises Simplicity_error"
       (check_simplicity_error "anchor" "&a foo");
     Testo.create ~category:cat "alias raises Simplicity_error"
-      (check_simplicity_error "alias"
-         "- &a foo\n- *a");
+      (check_simplicity_error "alias" "- &a foo\n- *a");
     Testo.create ~category:cat "explicit tag raises Simplicity_error"
       (check_simplicity_error "tag" "!!str foo");
     Testo.create ~category:cat "anchor on sequence raises Simplicity_error"
       (check_simplicity_error "seq anchor" "&seq\n- a\n- b");
     Testo.create ~category:cat "anchor on mapping raises Simplicity_error"
       (check_simplicity_error "map anchor" "&m\na: 1");
-    Testo.create ~category:cat
-      "merge key in YAML 1.1 raises Simplicity_error" (fun () ->
+    Testo.create ~category:cat "merge key in YAML 1.1 raises Simplicity_error"
+      (fun () ->
         match
           YAMLx.Values.of_yaml_exn ~schema:YAMLx.Yaml_1_1 ~plain:true
             "- &base\n  x: 1\n- <<: *base\n  y: 2"
@@ -1053,9 +1052,9 @@ let plain_mode_tests () =
             "<<: value"
         with
         | [
-           YAMLx.Map
-             (_, [ (_, YAMLx.String (_, "<<"), YAMLx.String (_, "value")) ]);
-          ] ->
+         YAMLx.Map
+           (_, [ (_, YAMLx.String (_, "<<"), YAMLx.String (_, "value")) ]);
+        ] ->
             ()
         | _ -> failwith "expected Map with plain key \"<<\"");
   ]

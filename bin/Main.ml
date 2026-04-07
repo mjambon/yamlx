@@ -313,7 +313,8 @@ let () =
         (match source with
           | `Stdin ->
               YAMLx.Values.of_yaml ~schema:!schema ~strict_schema:!strict_schema
-                ~reject_ambiguous:!reject_ambiguous ~plain:!plain_input (read_stdin ())
+                ~reject_ambiguous:!reject_ambiguous ~plain:!plain_input
+                (read_stdin ())
           | `File path ->
               YAMLx.Values.of_yaml_file ~schema:!schema
                 ~strict_schema:!strict_schema
@@ -331,7 +332,8 @@ let () =
         (match source with
           | `Stdin ->
               YAMLx.Values.of_yaml ~schema:!schema ~strict_schema:!strict_schema
-                ~reject_ambiguous:!reject_ambiguous ~plain:!plain_input (read_stdin ())
+                ~reject_ambiguous:!reject_ambiguous ~plain:!plain_input
+                (read_stdin ())
           | `File path ->
               YAMLx.Values.of_yaml_file ~schema:!schema
                 ~strict_schema:!strict_schema
