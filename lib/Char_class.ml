@@ -77,9 +77,8 @@ let can_start_plain_block cp =
   (* # *) && cp <> 0x26 (* & *)
   && cp <> 0x2A (* * *) && cp <> 0x3F
   (* ? *) && cp <> 0x3A (* : *)
-  && cp <> 0x2D (* - *) && cp <> 0x3C
-  (* < *) && cp <> 0x3E (* > *)
-  && cp <> 0x3D (* = *) && cp <> 0x21
+  && cp <> 0x2D (* - *) && cp <> 0x3E
+  (* > *) && cp <> 0x21
   (* ! *) && cp <> 0x25 (* % *)
   && cp <> 0x40 (* @ *) && cp <> 0x60 (* ` *)
   && (not (is_flow_indicator cp))

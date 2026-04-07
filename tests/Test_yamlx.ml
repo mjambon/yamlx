@@ -56,20 +56,7 @@ let run_test_case (tc : Suite_loader.test_case) () =
     end
   else begin
     (* Parse must succeed *)
-    let events =
-      match YAMLx.parse_events tc.yaml with
-      | exception YAMLx.Error (YAMLx.Scan_error e) ->
-          failwith
-            (Printf.sprintf
-               "[%s] %s: unexpected scan error at line %d col %d: %s" tc.id
-               tc.name e.pos.line e.pos.column e.msg)
-      | exception YAMLx.Error (YAMLx.Parse_error e) ->
-          failwith
-            (Printf.sprintf
-               "[%s] %s: unexpected parse error at line %d col %d: %s" tc.id
-               tc.name e.pos.line e.pos.column e.msg)
-      | evs -> evs
-    in
+    let events = YAMLx.parse_events tc.yaml in
     (* Only compare against the expected tree if one is given *)
     match tc.tree with
     | None -> ()
@@ -732,12 +719,239 @@ let conversion_tests () =
   ]
 
 (* ------------------------------------------------------------------ *)
+(* YAML 1.1 schema tests                                                 *)
+(* ------------------------------------------------------------------ *)
+
+(** Resolve [yaml] with [schema] and return the noloc value list for easy
+    matching. *)
+let resolve11 yaml = YAMLx.Values.of_yaml_exn ~schema:YAMLx.Yaml_1_1 yaml
+
+let resolve12 yaml = YAMLx.Values.of_yaml_exn ~schema:YAMLx.Yaml_1_2 yaml
+
+let yaml_1_1_tests () =
+  let check label yaml expected_12 expected_11 =
+    [
+      Testo.create ~category:[ "yaml-1.1" ] (label ^ " — 1.2 resolution")
+        (fun () -> Testo.(check yamlx_values) expected_12 (resolve12 yaml));
+      Testo.create ~category:[ "yaml-1.1" ] (label ^ " — 1.1 resolution")
+        (fun () -> Testo.(check yamlx_values) expected_11 (resolve11 yaml));
+    ]
+  in
+  let check_same label yaml expected = check label yaml expected expected in
+  let null_ = YAMLx.Null z
+  and true_ = YAMLx.Bool (z, true)
+  and false_ = YAMLx.Bool (z, false)
+  and str s = YAMLx.String (z, s)
+  and int_ n = YAMLx.Int (z, Int64.of_int n)
+  and float_ f = YAMLx.Float (z, f) in
+  (* ------------------------------------------------------------------ *)
+  (* Task 1: <<  is an ordinary string key in YAML 1.2                   *)
+  (* ------------------------------------------------------------------ *)
+  List.concat
+    [
+      [
+        Testo.create ~category:[ "yaml-1.1" ]
+          "task 1: << is a plain string key in YAML 1.2" (fun () ->
+            match resolve12 "<<: value" with
+            | [
+             YAMLx.Map
+               (_, [ (_, YAMLx.String (_, "<<"), YAMLx.String (_, "value")) ]);
+            ] ->
+                ()
+            | _ -> failwith "expected Map with key \"<<\"");
+      ];
+      (* ---------------------------------------------------------------- *)
+      (* Booleans                                                          *)
+      (* ---------------------------------------------------------------- *)
+      check "bool y/n" "y" [ str "y" ] [ true_ ];
+      check "bool Y/N" "Y" [ str "Y" ] [ true_ ];
+      check "bool yes/no" "yes" [ str "yes" ] [ true_ ];
+      check "bool Yes/No" "Yes" [ str "Yes" ] [ true_ ];
+      check "bool YES/NO" "YES" [ str "YES" ] [ true_ ];
+      check "bool n" "n" [ str "n" ] [ false_ ];
+      check "bool no" "no" [ str "no" ] [ false_ ];
+      check "bool on" "on" [ str "on" ] [ true_ ];
+      check "bool On" "On" [ str "On" ] [ true_ ];
+      check "bool ON" "ON" [ str "ON" ] [ true_ ];
+      check "bool off" "off" [ str "off" ] [ false_ ];
+      check "bool Off" "Off" [ str "Off" ] [ false_ ];
+      check "bool OFF" "OFF" [ str "OFF" ] [ false_ ];
+      check_same "bool true" "true" [ true_ ];
+      check_same "bool false" "false" [ false_ ];
+      check_same "null ~" "~" [ null_ ];
+      check_same "null keyword" "null" [ null_ ];
+      check "octal 0755 (decimal in 1.2)" "0755" [ str "0755" ] [ int_ 493 ];
+      check "octal 0o755 (both schemas)" "0o755" [ int_ 493 ] [ int_ 493 ];
+      check "octal 00 is octal zero in 1.1" "00" [ str "00" ] [ int_ 0 ];
+      check "sexagesimal 3:25:45" "3:25:45" [ str "3:25:45" ] [ int_ 12345 ];
+      check "sexagesimal 1:00" "1:00" [ str "1:00" ] [ int_ 60 ];
+      check "sexagesimal 60:00" "60:00" [ str "60:00" ] [ int_ 3600 ];
+      check "sexagesimal float 20:30.15" "20:30.15"
+        [ str "20:30.15" ]
+        [ float_ 1230.15 ];
+      check "sexagesimal float 1:0.0" "1:0.0" [ str "1:0.0" ] [ float_ 60.0 ];
+      [
+        Testo.create ~category:[ "yaml-1.1" ] "merge key: simple mapping merge"
+          (fun () ->
+            let yaml = "a: 1\nb: 2\n<<:\n  b: 99\n  c: 3\n" in
+            match resolve11 yaml with
+            | [ YAMLx.Map (_, pairs) ] -> (
+                let get k =
+                  List.find_map
+                    (fun (_, kv, vv) ->
+                      match kv with
+                      | YAMLx.String (_, s) when s = k -> Some vv
+                      | _ -> None)
+                    pairs
+                in
+                match (get "a", get "b", get "c") with
+                | ( Some (YAMLx.Int (_, 1L)),
+                    Some (YAMLx.Int (_, 2L)),
+                    Some (YAMLx.Int (_, 3L)) ) ->
+                    ()
+                | _ -> failwith "unexpected merge result")
+            | _ -> failwith "expected Map");
+      ];
+      [
+        Testo.create ~category:[ "yaml-1.1" ] "merge key: sequence of mappings"
+          (fun () ->
+            let yaml = "a: 1\n<<:\n  - b: 2\n  - b: 99\n    c: 3\n" in
+            match resolve11 yaml with
+            | [ YAMLx.Map (_, pairs) ] -> (
+                let keys =
+                  List.filter_map
+                    (fun (_, k, _) ->
+                      match k with
+                      | YAMLx.String (_, s) -> Some s
+                      | _ -> None)
+                    pairs
+                in
+                if List.mem "<<" keys then failwith "<< should be gone";
+                let get k =
+                  List.find_map
+                    (fun (_, kv, vv) ->
+                      match kv with
+                      | YAMLx.String (_, s) when s = k -> Some vv
+                      | _ -> None)
+                    pairs
+                in
+                match (get "b", get "c") with
+                | Some (YAMLx.Int (_, 2L)), Some (YAMLx.Int (_, 3L)) -> ()
+                | _ -> failwith "wrong merge result")
+            | _ -> failwith "expected Map");
+      ];
+      [
+        Testo.create ~category:[ "yaml-1.1" ]
+          "merge key: << is plain string in YAML 1.2" (fun () ->
+            let yaml = "a: 1\n<<:\n  b: 2\n" in
+            match resolve12 yaml with
+            | [ YAMLx.Map (_, pairs) ] ->
+                let has_merge =
+                  List.exists
+                    (fun (_, k, _) ->
+                      YAMLx.equal_value k (YAMLx.String (z, "<<")))
+                    pairs
+                in
+                if not has_merge then failwith "<< key missing in 1.2 result"
+            | _ -> failwith "expected Map");
+      ];
+      [
+        Testo.create ~category:[ "yaml-1.1" ]
+          "%YAML 1.1 directive auto-selects 1.1 schema" (fun () ->
+            match YAMLx.Values.of_yaml_exn "%YAML 1.1\n---\nyes\n" with
+            | [ YAMLx.Bool (_, true) ] -> ()
+            | _ -> failwith "expected Bool true from %YAML 1.1 doc");
+      ];
+      [
+        Testo.create ~category:[ "yaml-1.1" ]
+          "%YAML 1.2 directive auto-selects 1.2 schema" (fun () ->
+            match
+              YAMLx.Values.of_yaml_exn ~schema:YAMLx.Yaml_1_1
+                "%YAML 1.2\n---\nyes\n"
+            with
+            | [ YAMLx.String (_, "yes") ] -> ()
+            | _ -> failwith "expected String \"yes\" from %YAML 1.2 doc");
+      ];
+      [
+        Testo.create ~category:[ "yaml-1.1" ]
+          "strict_schema: %YAML 1.2 in 1.1 session raises Schema_error"
+          (fun () ->
+            match
+              YAMLx.Values.of_yaml_exn ~schema:YAMLx.Yaml_1_1
+                ~strict_schema:true "%YAML 1.2\n---\nyes\n"
+            with
+            | exception YAMLx.Error (YAMLx.Schema_error _) -> ()
+            | exception YAMLx.Error _ -> failwith "unexpected error kind"
+            | _ -> failwith "expected an exception");
+      ];
+      [
+        Testo.create ~category:[ "yaml-1.1" ]
+          "strict_schema: matching directive does not raise" (fun () ->
+            match
+              YAMLx.Values.of_yaml_exn ~schema:YAMLx.Yaml_1_1
+                ~strict_schema:true "%YAML 1.1\n---\nyes\n"
+            with
+            | [ YAMLx.Bool (_, true) ] -> ()
+            | _ -> failwith "expected Bool true");
+      ];
+      [
+        Testo.create ~category:[ "yaml-1.1" ]
+          "reject_ambiguous: yes raises Schema_error in 1.2 mode" (fun () ->
+            match
+              YAMLx.Values.of_yaml_exn ~schema:YAMLx.Yaml_1_2
+                ~reject_ambiguous:true "yes"
+            with
+            | exception YAMLx.Error (YAMLx.Schema_error _) -> ()
+            | _ -> failwith "expected Schema_error");
+      ];
+      [
+        Testo.create ~category:[ "yaml-1.1" ]
+          "reject_ambiguous: 0755 raises Schema_error in 1.2 mode" (fun () ->
+            match
+              YAMLx.Values.of_yaml_exn ~schema:YAMLx.Yaml_1_2
+                ~reject_ambiguous:true "0755"
+            with
+            | exception YAMLx.Error (YAMLx.Schema_error _) -> ()
+            | _ -> failwith "expected Schema_error");
+      ];
+      [
+        Testo.create ~category:[ "yaml-1.1" ]
+          "reject_ambiguous: 3:25:45 raises Schema_error in 1.2 mode" (fun () ->
+            match
+              YAMLx.Values.of_yaml_exn ~schema:YAMLx.Yaml_1_2
+                ~reject_ambiguous:true "3:25:45"
+            with
+            | exception YAMLx.Error (YAMLx.Schema_error _) -> ()
+            | _ -> failwith "expected Schema_error");
+      ];
+      [
+        Testo.create ~category:[ "yaml-1.1" ]
+          "reject_ambiguous: << key raises Schema_error in 1.2 mode" (fun () ->
+            match
+              YAMLx.Values.of_yaml_exn ~schema:YAMLx.Yaml_1_2
+                ~reject_ambiguous:true "<<: value"
+            with
+            | exception YAMLx.Error (YAMLx.Schema_error _) -> ()
+            | _ -> failwith "expected Schema_error");
+      ];
+      [
+        Testo.create ~category:[ "yaml-1.1" ]
+          "reject_ambiguous: unambiguous 1.2 values are accepted" (fun () ->
+            (* true, 42, 0o755, .inf should all be fine *)
+            ignore
+              (YAMLx.Values.of_yaml_exn ~schema:YAMLx.Yaml_1_2
+                 ~reject_ambiguous:true "true"));
+      ];
+    ]
+
+(* ------------------------------------------------------------------ *)
 (* Entry point                                                           *)
 (* ------------------------------------------------------------------ *)
 
 let () =
+  YAMLx.register_exception_printers ();
   Testo.interpret_argv ~project_name:"yamlx" (fun _tags ->
       unit_tests () @ encoding_tests () @ roundtrip_tests () @ comment_tests ()
       @ anchor_tests () @ printer_tests () @ expansion_limit_tests ()
       @ depth_limit_tests () @ performance_tests () @ conversion_tests ()
-      @ suite_tests ())
+      @ yaml_1_1_tests () @ suite_tests ())

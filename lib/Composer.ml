@@ -158,25 +158,30 @@ let rec compose_node (c : t) ~(depth : int) : node =
       Types.parse_error ev.start_pos
         "compose_node: unexpected event kind at this position"
 
-(** Compose a complete YAML document. Expects: DOCUMENT_START … DOCUMENT_END. *)
-let compose_document (c : t) : node =
+(** Compose a complete YAML document. Returns the document's [%YAML] version
+    directive (if any) paired with the composed node. *)
+let compose_document (c : t) : (int * int) option * node =
   (* Anchors are document-local: clear any anchors from previous documents. *)
   Hashtbl.clear c.anchors;
-  (* Consume DOCUMENT_START *)
+  (* Consume DOCUMENT_START and capture the version directive. *)
   let start_ev = get_ev c in
-  (match start_ev.kind with
-  | Document_start _ -> ()
-  | _ -> Types.parse_error start_ev.start_pos "expected DOCUMENT_START");
+  let version =
+    match start_ev.kind with
+    | Document_start { version; _ } -> version
+    | _ -> Types.parse_error start_ev.start_pos "expected DOCUMENT_START"
+  in
   let node = compose_node c ~depth:1 in
   (* Consume DOCUMENT_END *)
   let end_ev = get_ev c in
   (match end_ev.kind with
   | Document_end _ -> ()
   | _ -> Types.parse_error end_ev.start_pos "expected DOCUMENT_END");
-  node
+  (version, node)
 
-(** Compose all documents in a YAML stream. Returns one node per document. *)
-let compose_stream (c : t) : node list =
+(** Compose all documents in a YAML stream. Returns one [(version, node)] pair
+    per document, where [version] is the value of the [%YAML] directive if
+    present. *)
+let compose_stream (c : t) : ((int * int) option * node) list =
   (* Consume STREAM_START *)
   let start_ev = get_ev c in
   (match start_ev.kind with

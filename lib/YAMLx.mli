@@ -59,9 +59,29 @@ val zero_loc : loc
     [end_pos] equal {!zero_pos}. Useful for constructing nodes programmatically
     when source locations are not meaningful. *)
 
+(** {1 YAML schema} *)
+
+type schema =
+  | Yaml_1_2
+  | Yaml_1_1
+      (** YAML schema used to resolve untagged plain scalars to typed values.
+
+          - {!Yaml_1_2} (the default): YAML 1.2 JSON schema. Booleans are only
+            [true]/[false]; octal uses [0o…] prefix; sexagesimal not recognised.
+          - {!Yaml_1_1}: YAML 1.1 schema. Extended booleans
+            ([yes]/[no]/[on]/[off] etc.), [0…]-prefixed octal, sexagesimal
+            integers and floats, and merge-key ([<<]) expansion. Use this to
+            read legacy YAML files.
+
+          New projects should use YAML 1.2. Pass [~schema:Yaml_1_1] to
+          {!Values.of_yaml_exn} (and friends) when reading older files. A
+          [%YAML 1.1] or [%YAML 1.2] directive in the stream selects the schema
+          automatically for that document (use [~strict_schema:true] to make a
+          mismatch an error instead). *)
+
 (** {1 Errors} *)
 
-type yaml_error = { msg : string; pos : pos }
+type yaml_error = { msg : string; loc : loc }
 
 type error =
   | Scan_error of yaml_error
@@ -84,6 +104,10 @@ type error =
   | Document_count_error of string
       (** The input contained the wrong number of documents for a
           single-document operation. *)
+  | Schema_error of yaml_error
+      (** A schema conflict: the document's [%YAML] directive disagrees with the
+          requested schema (when [~strict_schema:true]), or a plain scalar is
+          ambiguous between YAML 1.1 and 1.2 (when [~reject_ambiguous:true]). *)
 
 exception Error of error
 (** The single exception raised by this library. Match on the payload to
@@ -97,15 +121,42 @@ exception Error of error
       | exception YAMLx.Error _ -> ...
     ]} *)
 
-val catch_errors : ?file:string -> (unit -> 'a) -> ('a, string) result
-(** Catch {!Error} and return [Ok _] or [Error msg]. When [~file] is given it is
-    prepended to every error message: positional errors (scan/parse) become
-    ["file foo.yaml, line L, column C: msg"] and non-positional errors become
-    ["file foo.yaml: msg"]. *)
+val default_format_loc : ?file:string -> loc -> string
+(** Default location formatter used by {!catch_errors} and
+    {!register_exception_printers}.
 
-val register_exception_printers : unit -> unit
+    The output format depends on the extent of [loc]:
+    - Zero-width (start = end): ["line 3, column 8"]
+    - Single-line range: ["line 3, columns 8-11"]
+    - Multi-line range: ["lines 3-12, columns 8-4"]
+
+    When [~file] is given, a ["file <name>, "] prefix is prepended, e.g.
+    ["file foo.yaml, line 3, columns 8-11"].
+
+    Columns are 0-based Unicode codepoint offsets from the start of the line,
+    matching the {!pos} fields [column] (not [column_bytes]). *)
+
+val catch_errors :
+  ?file:string ->
+  ?format_loc:(?file:string -> loc -> string) ->
+  (unit -> 'a) ->
+  ('a, string) result
+(** Catch {!Error} and return [Ok _] or [Error msg].
+
+    When [~file] is given it is prepended to every error message: positional
+    errors (scan/parse/schema) become
+    ["file foo.yaml, line L, columns C1-C2: msg"] and non-positional errors
+    become ["file foo.yaml: msg"].
+
+    [~format_loc] overrides how source locations are formatted (default:
+    {!default_format_loc}). Provide a custom implementation to adapt the output
+    for editors, LSP servers, or structured logging. *)
+
+val register_exception_printers :
+  ?format_loc:(?file:string -> loc -> string) -> unit -> unit
 (** Register a printer for {!Error} so it displays legibly in uncaught-exception
-    output. *)
+    output. [~format_loc] overrides location formatting (default:
+    {!default_format_loc}). *)
 
 val default_expansion_limit : int
 (** Default node-visit budget for alias expansion (1,000,000). *)
@@ -114,7 +165,8 @@ val default_max_depth : int
 (** Default maximum nesting depth (512). *)
 
 val string_of_error : yaml_error -> string
-(** Format a {!yaml_error} as ["line L, column C: message"]. *)
+(** Format a {!yaml_error} using {!default_format_loc} followed by
+    [": message"]. Equivalent to [default_format_loc e.loc ^ ": " ^ e.msg]. *)
 
 (** {1 Scalar styles} *)
 
@@ -295,10 +347,11 @@ val value_height : value -> int
 
     [Values] is the most convenient interface for reading and writing plain YAML
     data. It resolves YAML scalars to typed OCaml values ({!Null}, {!Bool},
-    {!Int}, {!Float}, {!String}, {!Seq}, {!Map}) using the YAML 1.2 JSON schema,
-    and can serialize those values back to YAML. For round-tripping use
-    {!Values.of_yaml_exn} / {!Values.to_yaml}; for single-document config files
-    use {!Values.one_of_yaml_file}. *)
+    {!Int}, {!Float}, {!String}, {!Seq}, {!Map}) and can serialize those values
+    back to YAML. The default schema is YAML 1.2; pass [~schema:Yaml_1_1] for
+    legacy files. For round-tripping use {!Values.of_yaml_exn} /
+    {!Values.to_yaml}; for single-document config files use
+    {!Values.one_of_yaml_file}. *)
 module Values : sig
   type t = value list
   (** One {!value} per YAML document in the input stream. *)
@@ -307,37 +360,75 @@ module Values : sig
     ?file:string ->
     ?max_depth:int ->
     ?expansion_limit:int ->
+    ?schema:schema ->
+    ?strict_schema:bool ->
+    ?reject_ambiguous:bool ->
     string ->
     (t, string) result
   (** Parse a YAML string and resolve each document to a typed value. Returns
-      [Ok docs] on success or [Error msg] on any failure, including scan errors,
-      parse errors, and limit violations. Does not raise. [~file] is prepended
-      to error messages (see {!catch_errors}). *)
+      [Ok docs] on success or [Error msg] on any failure. Does not raise.
+      [~file] is prepended to error messages.
+
+      [~schema] selects the resolver (default: {!Yaml_1_2}). A [%YAML] directive
+      in the stream overrides [~schema] per document; use [~strict_schema:true]
+      to turn such a mismatch into an error instead.
+
+      [~reject_ambiguous:true] (only meaningful with the default [Yaml_1_2]
+      schema) raises {!Schema_error} for plain scalars that would resolve
+      differently under YAML 1.1 (e.g. [yes], [0755], sexagesimal, [<<] mapping
+      keys). *)
 
   val of_yaml_file :
-    ?max_depth:int -> ?expansion_limit:int -> string -> (t, string) result
+    ?max_depth:int ->
+    ?expansion_limit:int ->
+    ?schema:schema ->
+    ?strict_schema:bool ->
+    ?reject_ambiguous:bool ->
+    string ->
+    (t, string) result
   (** Like {!of_yaml} but reads the YAML from the file at the given path.
       File-read errors are returned as [Error msg]. The file path is
       automatically prepended to all error messages. *)
 
-  val of_yaml_exn : ?max_depth:int -> ?expansion_limit:int -> string -> t
+  val of_yaml_exn :
+    ?max_depth:int ->
+    ?expansion_limit:int ->
+    ?schema:schema ->
+    ?strict_schema:bool ->
+    ?reject_ambiguous:bool ->
+    string ->
+    t
   (** Like {!of_yaml} but raises instead of returning a result.
 
       Raises {!Error} [(Scan_error _)] on invalid YAML syntax, [(Parse_error _)]
       on a malformed token stream, [(Depth_limit_exceeded _)] when nesting
       exceeds [max_depth] (default: {!default_max_depth}),
       [(Expansion_limit_exceeded _)] when alias expansion exceeds
-      [expansion_limit] (default: {!default_expansion_limit}). *)
+      [expansion_limit] (default: {!default_expansion_limit}),
+      [(Schema_error _)] on schema conflicts (see [~strict_schema] and
+      [~reject_ambiguous]). *)
 
-  val of_nodes_exn : ?expansion_limit:int -> node list -> t
-  (** Resolve a list of AST nodes (as produced by {!Nodes.of_yaml_exn}) to typed
-      values. This is the composition of {!Nodes.of_yaml_exn} and
-      {!of_yaml_exn}, exposed for callers that already have nodes.
+  val of_nodes_exn :
+    ?expansion_limit:int ->
+    ?schema:schema ->
+    ?strict_schema:bool ->
+    ?reject_ambiguous:bool ->
+    node list ->
+    t
+  (** Resolve a list of AST nodes to typed values. The [%YAML] version directive
+      is not available from bare nodes, so only the explicit [~schema] is used
+      (no per-document override).
 
       Raises {!Error} [(Expansion_limit_exceeded _)] on excessive alias
-      expansion. *)
+      expansion, [(Schema_error _)] on ambiguity (see [~reject_ambiguous]). *)
 
-  val of_nodes : ?expansion_limit:int -> node list -> (t, string) result
+  val of_nodes :
+    ?expansion_limit:int ->
+    ?schema:schema ->
+    ?strict_schema:bool ->
+    ?reject_ambiguous:bool ->
+    node list ->
+    (t, string) result
   (** Like {!of_nodes_exn} but returns [Ok values] on success or [Error msg] on
       failure. Does not raise. *)
 
@@ -345,24 +436,35 @@ module Values : sig
     ?file:string ->
     ?max_depth:int ->
     ?expansion_limit:int ->
+    ?schema:schema ->
+    ?strict_schema:bool ->
+    ?reject_ambiguous:bool ->
     string ->
     (value, string) result
   (** Like {!one_of_yaml_exn} but returns [Ok v] on success or [Error msg] on
-      any failure, including wrong document count. Does not raise. [~file] is
-      prepended to error messages (see {!catch_errors}). *)
+      any failure, including wrong document count. Does not raise. *)
 
   val one_of_yaml_file :
-    ?max_depth:int -> ?expansion_limit:int -> string -> (value, string) result
-  (** Like {!one_of_yaml} but reads the YAML from the file at the given path.
-      File-read errors are returned as [Error msg]. The file path is
-      automatically prepended to all error messages. *)
+    ?max_depth:int ->
+    ?expansion_limit:int ->
+    ?schema:schema ->
+    ?strict_schema:bool ->
+    ?reject_ambiguous:bool ->
+    string ->
+    (value, string) result
+  (** Like {!one_of_yaml} but reads from a file. *)
 
   val one_of_yaml_exn :
-    ?max_depth:int -> ?expansion_limit:int -> string -> value
+    ?max_depth:int ->
+    ?expansion_limit:int ->
+    ?schema:schema ->
+    ?strict_schema:bool ->
+    ?reject_ambiguous:bool ->
+    string ->
+    value
   (** Parse a YAML string expecting exactly one document and return its value.
       Raises {!Error} [(Document_count_error _)] if the input contains zero or
-      more than one document. Raises {!Error} on other failures (same conditions
-      as {!of_yaml_exn}). *)
+      more than one document. Other failures same as {!of_yaml_exn}. *)
 
   val to_nodes : t -> node list
   (** Convert typed values back to AST nodes. Each {!value} becomes one {!node}

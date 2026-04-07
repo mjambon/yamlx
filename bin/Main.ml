@@ -17,6 +17,17 @@ type format = Events | Yaml | Plain | Value | Node | Noloc | Value_noloc
 
 let format = ref Yaml
 let strict = ref false
+let schema : YAMLx.schema ref = ref YAMLx.Yaml_1_2
+let strict_schema = ref false
+let reject_ambiguous = ref false
+
+let set_schema s =
+  match s with
+  | "1.1" -> schema := Yaml_1_1
+  | "1.2" -> schema := Yaml_1_2
+  | other ->
+      raise
+        (Arg.Bad (Printf.sprintf "unknown schema %S (choose: 1.1, 1.2)" other))
 
 let set_format s =
   match s with
@@ -36,9 +47,9 @@ let set_format s =
               other))
 
 let usage_msg =
-  {|Usage: yamlx [-f FORMAT] [FILE]
+  {|Usage: yamlx [-f FORMAT] [--schema VERSION] [FILE]
 
-  Parse YAML 1.2 from FILE (or stdin) and write the result to stdout.
+  Parse YAML from FILE (or stdin) and write the result to stdout.
   Reads from standard input when no FILE is given.
   Multi-document streams, anchors, tags, and Unicode are fully supported.
 
@@ -46,7 +57,7 @@ let usage_msg =
     yaml    Pretty-printed YAML — scalar styles and block/flow mode preserved
             (default)
     plain   Simplified YAML — aliases expanded, tags stripped, flow collections
-            converted to block; raises an error on complex mapping keys
+            converted to block; merge keys expanded in YAML 1.1 mode
     value   Typed-value tree: Null / Bool / Int / Float / String / Seq / Map
             Useful for checking how scalars are resolved (e.g. is "1e2" a Float?)
     value-noloc  Same as value but without source locations
@@ -54,6 +65,14 @@ let usage_msg =
             best-effort comment preservation
     node-noloc  Same as node but without source locations and heights
     events  yaml-test-suite event-tree notation (mainly for parser testing)
+
+  YAML schema (--schema VERSION):
+    1.2  YAML 1.2 JSON schema — default. Booleans: true/false only.
+         Octal: 0o755. No sexagesimal.
+    1.1  YAML 1.1 schema — for legacy files. Extended booleans (yes/no/on/off),
+         0755-style octal, sexagesimal integers and floats, merge keys (<<).
+    A %YAML directive in the document overrides this setting per document
+    unless --strict-schema is given.
 
   Options:|}
 
@@ -67,6 +86,16 @@ let spec =
       Arg.Set strict,
       "  With -f plain: raise an error on tags instead of silently stripping \
        them" );
+    ( "--schema",
+      Arg.String set_schema,
+      "VERSION  YAML schema: 1.1 or 1.2 (default: 1.2)" );
+    ( "--strict-schema",
+      Arg.Set strict_schema,
+      "  Error if the document's %YAML directive disagrees with --schema" );
+    ( "--reject-ambiguous",
+      Arg.Set reject_ambiguous,
+      "  With --schema 1.2: error on plain scalars that would resolve \
+       differently under YAML 1.1 (e.g. yes, 0755, <<)" );
   ]
 
 (* ------------------------------------------------------------------ *)
@@ -252,15 +281,39 @@ let () =
             YAMLx.events_to_tree (YAMLx.parse_events input))
         |> or_die
     | Yaml -> get_nodes () |> Result.map YAMLx.Nodes.to_yaml |> or_die
-    | Plain ->
-        let nodes = get_nodes () |> or_die in
-        YAMLx.catch_errors ?file (fun () ->
-            YAMLx.Nodes.to_plain_yaml_exn ~strict:!strict nodes)
-        |> or_die
+    | Plain -> (
+        (* In YAML 1.1 mode, go through Values so that merge keys are expanded
+           before serialisation.  In 1.2 mode take the faster nodes path. *)
+        match !schema with
+        | YAMLx.Yaml_1_1 ->
+            let values =
+              (match source with
+                | `Stdin ->
+                    YAMLx.Values.of_yaml ~schema:Yaml_1_1
+                      ~strict_schema:!strict_schema (read_stdin ())
+                | `File path ->
+                    YAMLx.Values.of_yaml_file ~schema:Yaml_1_1
+                      ~strict_schema:!strict_schema path)
+              |> or_die
+            in
+            let nodes = YAMLx.Values.to_nodes values in
+            YAMLx.catch_errors ?file (fun () ->
+                YAMLx.Nodes.to_plain_yaml_exn ~strict:!strict nodes)
+            |> or_die
+        | YAMLx.Yaml_1_2 ->
+            let nodes = get_nodes () |> or_die in
+            YAMLx.catch_errors ?file (fun () ->
+                YAMLx.Nodes.to_plain_yaml_exn ~strict:!strict nodes)
+            |> or_die)
     | Value ->
         (match source with
-          | `Stdin -> YAMLx.Values.of_yaml (read_stdin ())
-          | `File path -> YAMLx.Values.of_yaml_file path)
+          | `Stdin ->
+              YAMLx.Values.of_yaml ~schema:!schema ~strict_schema:!strict_schema
+                ~reject_ambiguous:!reject_ambiguous (read_stdin ())
+          | `File path ->
+              YAMLx.Values.of_yaml_file ~schema:!schema
+                ~strict_schema:!strict_schema
+                ~reject_ambiguous:!reject_ambiguous path)
         |> Result.map (fun values ->
             let buf = Buffer.create 256 in
             List.iter
@@ -294,8 +347,13 @@ let () =
         |> or_die
     | Value_noloc ->
         (match source with
-          | `Stdin -> YAMLx.Values.of_yaml (read_stdin ())
-          | `File path -> YAMLx.Values.of_yaml_file path)
+          | `Stdin ->
+              YAMLx.Values.of_yaml ~schema:!schema ~strict_schema:!strict_schema
+                ~reject_ambiguous:!reject_ambiguous (read_stdin ())
+          | `File path ->
+              YAMLx.Values.of_yaml_file ~schema:!schema
+                ~strict_schema:!strict_schema
+                ~reject_ambiguous:!reject_ambiguous path)
         |> Result.map (fun values ->
             let buf = Buffer.create 256 in
             List.iter
