@@ -1007,6 +1007,60 @@ let yaml_1_1_tests () =
     ]
 
 (* ------------------------------------------------------------------ *)
+(* Simple-mode tests                                                     *)
+(* ------------------------------------------------------------------ *)
+
+let simple_mode_tests () =
+  let check_ok label yaml () =
+    ignore (YAMLx.Values.of_yaml_exn ~simple:true yaml);
+    ignore label
+  in
+  let check_simplicity_error label yaml () =
+    match YAMLx.Values.of_yaml_exn ~simple:true yaml with
+    | exception YAMLx.Error (YAMLx.Simplicity_error _) -> ()
+    | _ -> failwith (label ^ ": expected Simplicity_error")
+  in
+  let cat = [ "simple-mode" ] in
+  [
+    Testo.create ~category:cat "plain scalar accepted" (check_ok "plain" "42");
+    Testo.create ~category:cat "plain mapping accepted"
+      (check_ok "mapping" "a: 1\nb: 2");
+    Testo.create ~category:cat "plain sequence accepted"
+      (check_ok "sequence" "- a\n- b");
+    Testo.create ~category:cat "anchor raises Simplicity_error"
+      (check_simplicity_error "anchor" "&a foo");
+    Testo.create ~category:cat "alias raises Simplicity_error"
+      (check_simplicity_error "alias"
+         "- &a foo\n- *a");
+    Testo.create ~category:cat "explicit tag raises Simplicity_error"
+      (check_simplicity_error "tag" "!!str foo");
+    Testo.create ~category:cat "anchor on sequence raises Simplicity_error"
+      (check_simplicity_error "seq anchor" "&seq\n- a\n- b");
+    Testo.create ~category:cat "anchor on mapping raises Simplicity_error"
+      (check_simplicity_error "map anchor" "&m\na: 1");
+    Testo.create ~category:cat
+      "merge key in YAML 1.1 raises Simplicity_error" (fun () ->
+        match
+          YAMLx.Values.of_yaml_exn ~schema:YAMLx.Yaml_1_1 ~simple:true
+            "- &base\n  x: 1\n- <<: *base\n  y: 2"
+        with
+        | exception YAMLx.Error (YAMLx.Simplicity_error _) -> ()
+        | _ -> failwith "expected Simplicity_error for merge key");
+    Testo.create ~category:cat
+      "merge key in YAML 1.2 accepted (it is a plain string key)" (fun () ->
+        match
+          YAMLx.Values.of_yaml_exn ~schema:YAMLx.Yaml_1_2 ~simple:true
+            "<<: value"
+        with
+        | [
+           YAMLx.Map
+             (_, [ (_, YAMLx.String (_, "<<"), YAMLx.String (_, "value")) ]);
+          ] ->
+            ()
+        | _ -> failwith "expected Map with plain key \"<<\"");
+  ]
+
+(* ------------------------------------------------------------------ *)
 (* Entry point                                                           *)
 (* ------------------------------------------------------------------ *)
 
@@ -1016,4 +1070,5 @@ let () =
       unit_tests () @ encoding_tests () @ roundtrip_tests () @ comment_tests ()
       @ anchor_tests () @ printer_tests () @ expansion_limit_tests ()
       @ depth_limit_tests () @ performance_tests () @ conversion_tests ()
-      @ duplicate_key_tests () @ yaml_1_1_tests () @ suite_tests ())
+      @ duplicate_key_tests () @ yaml_1_1_tests () @ simple_mode_tests ()
+      @ suite_tests ())

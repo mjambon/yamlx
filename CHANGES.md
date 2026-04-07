@@ -90,6 +90,22 @@
   `?format_loc` parameter to plug in a custom location formatter (e.g.
   for LSP servers or structured logging).
 
+### Simple mode
+
+- New `?simple:bool` option on all `Values` functions (`of_yaml`,
+  `of_yaml_exn`, `of_yaml_file`, `of_nodes`, `of_nodes_exn`, `one_of_yaml`,
+  `one_of_yaml_file`, `one_of_yaml_exn`). When `~simple:true`, the resolver
+  raises `Simplicity_error` if it encounters any anchor (`&name`), alias
+  (`*name`), or explicit tag on any node. In YAML 1.1 mode, merge keys (`<<`)
+  also raise `Simplicity_error`. Plain YAML inputs without those features are
+  accepted unchanged.
+- New `Simplicity_error of yaml_error` error variant (carries source location).
+  Handled by `catch_errors` (renders as `"simplicity error: …"`) and
+  `register_exception_printers`.
+- New `--simple` flag for the `yamlx` command, applicable with `-f value` and
+  `-f value-loc`. Corresponds to the parsing-side counterpart of the `plain`
+  output format.
+
 ### Duplicate key handling
 
 - The resolver now deduplicates mapping keys, keeping the last occurrence

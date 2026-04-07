@@ -53,6 +53,10 @@ type error =
   | Plain_error of string
   | Document_count_error of string
   | Schema_error of yaml_error
+  | Simplicity_error of yaml_error
+      (** A YAML feature not allowed in simple mode was encountered: an
+          anchor, alias, explicit tag, or (in YAML 1.1 mode) a merge key
+          ([<<]). *)
 
 exception Error of error
 

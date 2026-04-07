@@ -108,6 +108,11 @@ type error =
       (** A schema conflict: the document's [%YAML] directive disagrees with the
           requested schema (when [~strict_schema:true]), or a plain scalar is
           ambiguous between YAML 1.1 and 1.2 (when [~reject_ambiguous:true]). *)
+  | Simplicity_error of yaml_error
+      (** A YAML feature not allowed in simple mode was encountered: an
+          anchor, alias, explicit tag, or (in YAML 1.1 mode) a merge key
+          ([<<]). Raised when [~simple:true] is passed to {!Values} functions.
+      *)
 
 exception Error of error
 (** The single exception raised by this library. Match on the payload to
@@ -363,6 +368,7 @@ module Values : sig
     ?schema:schema ->
     ?strict_schema:bool ->
     ?reject_ambiguous:bool ->
+    ?simple:bool ->
     string ->
     (t, string) result
   (** Parse a YAML string and resolve each document to a typed value. Returns
@@ -376,7 +382,11 @@ module Values : sig
       [~reject_ambiguous:true] (only meaningful with the default [Yaml_1_2]
       schema) raises {!Schema_error} for plain scalars that would resolve
       differently under YAML 1.1 (e.g. [yes], [0755], sexagesimal, [<<] mapping
-      keys). *)
+      keys).
+
+      [~simple:true] restricts input to plain YAML: raises {!Simplicity_error}
+      if any anchor, alias, or explicit tag is encountered, and (in YAML 1.1
+      mode) if any merge key ([<<]) is encountered. *)
 
   val of_yaml_file :
     ?max_depth:int ->
@@ -384,6 +394,7 @@ module Values : sig
     ?schema:schema ->
     ?strict_schema:bool ->
     ?reject_ambiguous:bool ->
+    ?simple:bool ->
     string ->
     (t, string) result
   (** Like {!of_yaml} but reads the YAML from the file at the given path.
@@ -396,6 +407,7 @@ module Values : sig
     ?schema:schema ->
     ?strict_schema:bool ->
     ?reject_ambiguous:bool ->
+    ?simple:bool ->
     string ->
     t
   (** Like {!of_yaml} but raises instead of returning a result.
@@ -406,13 +418,15 @@ module Values : sig
       [(Expansion_limit_exceeded _)] when alias expansion exceeds
       [expansion_limit] (default: {!default_expansion_limit}),
       [(Schema_error _)] on schema conflicts (see [~strict_schema] and
-      [~reject_ambiguous]). *)
+      [~reject_ambiguous]),
+      [(Simplicity_error _)] on disallowed YAML features (see [~simple]). *)
 
   val of_nodes_exn :
     ?expansion_limit:int ->
     ?schema:schema ->
     ?strict_schema:bool ->
     ?reject_ambiguous:bool ->
+    ?simple:bool ->
     node list ->
     t
   (** Resolve a list of AST nodes to typed values. The [%YAML] version directive
@@ -420,13 +434,15 @@ module Values : sig
       (no per-document override).
 
       Raises {!Error} [(Expansion_limit_exceeded _)] on excessive alias
-      expansion, [(Schema_error _)] on ambiguity (see [~reject_ambiguous]). *)
+      expansion, [(Schema_error _)] on ambiguity (see [~reject_ambiguous]),
+      [(Simplicity_error _)] on disallowed features (see [~simple]). *)
 
   val of_nodes :
     ?expansion_limit:int ->
     ?schema:schema ->
     ?strict_schema:bool ->
     ?reject_ambiguous:bool ->
+    ?simple:bool ->
     node list ->
     (t, string) result
   (** Like {!of_nodes_exn} but returns [Ok values] on success or [Error msg] on
@@ -439,6 +455,7 @@ module Values : sig
     ?schema:schema ->
     ?strict_schema:bool ->
     ?reject_ambiguous:bool ->
+    ?simple:bool ->
     string ->
     (value, string) result
   (** Like {!one_of_yaml_exn} but returns [Ok v] on success or [Error msg] on
@@ -450,6 +467,7 @@ module Values : sig
     ?schema:schema ->
     ?strict_schema:bool ->
     ?reject_ambiguous:bool ->
+    ?simple:bool ->
     string ->
     (value, string) result
   (** Like {!one_of_yaml} but reads from a file. *)
@@ -460,6 +478,7 @@ module Values : sig
     ?schema:schema ->
     ?strict_schema:bool ->
     ?reject_ambiguous:bool ->
+    ?simple:bool ->
     string ->
     value
   (** Parse a YAML string expecting exactly one document and return its value.
