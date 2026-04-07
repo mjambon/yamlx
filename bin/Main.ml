@@ -13,7 +13,7 @@
 (* Output format                                                         *)
 (* ------------------------------------------------------------------ *)
 
-type format = Events | Yaml | Plain | Value | Node | Noloc | Value_noloc
+type format = Events | Yaml | Plain | Value | Value_loc | Node | Node_loc
 
 let format = ref Yaml
 let strict = ref false
@@ -35,15 +35,15 @@ let set_format s =
   | "yaml" -> format := Yaml
   | "plain" -> format := Plain
   | "value" -> format := Value
+  | "value-loc" -> format := Value_loc
   | "node" -> format := Node
-  | "node-noloc" -> format := Noloc
-  | "value-noloc" -> format := Value_noloc
+  | "node-loc" -> format := Node_loc
   | other ->
       raise
         (Arg.Bad
            (Printf.sprintf
               "unknown format %S (choose: yaml, plain, events, value, \
-               value-noloc, node, node-noloc)"
+               value-loc, node, node-loc)"
               other))
 
 let usage_msg =
@@ -60,10 +60,9 @@ let usage_msg =
             converted to block; merge keys expanded in YAML 1.1 mode
     value   Typed-value tree: Null / Bool / Int / Float / String / Seq / Map
             Useful for checking how scalars are resolved (e.g. is "1e2" a Float?)
-    value-noloc  Same as value but without source locations
-    node    Full AST with source locations, anchors, tags, scalar styles, and
-            best-effort comment preservation
-    node-noloc  Same as node but without source locations and heights
+    value-loc  Same as value but with source locations
+    node    Full AST without source locations or heights
+    node-loc  Same as node but with source locations and heights
     events  yaml-test-suite event-tree notation (mainly for parser testing)
 
   YAML schema (--schema VERSION):
@@ -318,34 +317,12 @@ let () =
             let buf = Buffer.create 256 in
             List.iter
               (fun v ->
-                Buffer.add_string buf (YAMLx.show_value v);
+                Buffer.add_string buf (show_noloc_value (noloc_value v));
                 Buffer.add_char buf '\n')
               values;
             Buffer.contents buf)
         |> or_die
-    | Node ->
-        get_nodes ()
-        |> Result.map (fun nodes ->
-            let buf = Buffer.create 256 in
-            List.iter
-              (fun n ->
-                Buffer.add_string buf (YAMLx.show_node n);
-                Buffer.add_char buf '\n')
-              nodes;
-            Buffer.contents buf)
-        |> or_die
-    | Noloc ->
-        get_nodes ()
-        |> Result.map (fun nodes ->
-            let buf = Buffer.create 256 in
-            List.iter
-              (fun n ->
-                Buffer.add_string buf (show_noloc_node (noloc_node n));
-                Buffer.add_char buf '\n')
-              nodes;
-            Buffer.contents buf)
-        |> or_die
-    | Value_noloc ->
+    | Value_loc ->
         (match source with
           | `Stdin ->
               YAMLx.Values.of_yaml ~schema:!schema ~strict_schema:!strict_schema
@@ -358,9 +335,31 @@ let () =
             let buf = Buffer.create 256 in
             List.iter
               (fun v ->
-                Buffer.add_string buf (show_noloc_value (noloc_value v));
+                Buffer.add_string buf (YAMLx.show_value v);
                 Buffer.add_char buf '\n')
               values;
+            Buffer.contents buf)
+        |> or_die
+    | Node ->
+        get_nodes ()
+        |> Result.map (fun nodes ->
+            let buf = Buffer.create 256 in
+            List.iter
+              (fun n ->
+                Buffer.add_string buf (show_noloc_node (noloc_node n));
+                Buffer.add_char buf '\n')
+              nodes;
+            Buffer.contents buf)
+        |> or_die
+    | Node_loc ->
+        get_nodes ()
+        |> Result.map (fun nodes ->
+            let buf = Buffer.create 256 in
+            List.iter
+              (fun n ->
+                Buffer.add_string buf (YAMLx.show_node n);
+                Buffer.add_char buf '\n')
+              nodes;
             Buffer.contents buf)
         |> or_die
   in
