@@ -56,20 +56,7 @@ let run_test_case (tc : Suite_loader.test_case) () =
     end
   else begin
     (* Parse must succeed *)
-    let events =
-      match YAMLx.parse_events tc.yaml with
-      | exception YAMLx.Error (YAMLx.Scan_error e) ->
-          failwith
-            (Printf.sprintf
-               "[%s] %s: unexpected scan error at line %d col %d: %s" tc.id
-               tc.name e.loc.start_pos.line e.loc.start_pos.column e.msg)
-      | exception YAMLx.Error (YAMLx.Parse_error e) ->
-          failwith
-            (Printf.sprintf
-               "[%s] %s: unexpected parse error at line %d col %d: %s" tc.id
-               tc.name e.loc.start_pos.line e.loc.start_pos.column e.msg)
-      | evs -> evs
-    in
+    let events = YAMLx.parse_events tc.yaml in
     (* Only compare against the expected tree if one is given *)
     match tc.tree with
     | None -> ()
@@ -962,6 +949,7 @@ let yaml_1_1_tests () =
 (* ------------------------------------------------------------------ *)
 
 let () =
+  YAMLx.register_exception_printers ();
   Testo.interpret_argv ~project_name:"yamlx" (fun _tags ->
       unit_tests () @ encoding_tests () @ roundtrip_tests () @ comment_tests ()
       @ anchor_tests () @ printer_tests () @ expansion_limit_tests ()
