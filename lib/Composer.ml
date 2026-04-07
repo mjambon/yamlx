@@ -16,7 +16,7 @@ open Types
 
 type t = {
   parser_ : Parser.t;
-  anchors : (string, node) Hashtbl.t;
+  anchors : (string, node Lazy.t ref) Hashtbl.t;
   max_depth : int;
 }
 
@@ -28,7 +28,21 @@ let create ?(max_depth = Types.default_max_depth) (parser_ : Parser.t) : t =
 (* ------------------------------------------------------------------ *)
 
 let get_ev c = Parser.get_event c.parser_
-let register_anchor c name node = Hashtbl.replace c.anchors name node
+
+(** Pre-register an anchor cell before the node is fully composed, so that
+    aliases inside the node can resolve to it. Returns the cell so it can be
+    filled after composition. *)
+let prereq_anchor c anchor =
+  match anchor with
+  | None -> None
+  | Some name ->
+      let cell = ref (lazy (assert false)) in
+      Hashtbl.replace c.anchors name cell;
+      Some cell
+
+(** Fill an anchor cell with the completed node. *)
+let fill_anchor cell_opt node =
+  Option.iter (fun cell -> cell := Lazy.from_val node) cell_opt
 
 (* ------------------------------------------------------------------ *)
 (* Node composition                                                      *)
@@ -53,18 +67,19 @@ let rec compose_node (c : t) ~(depth : int) : node =
   match ev.kind with
   | Alias name -> (
       match Hashtbl.find_opt c.anchors name with
-      | Some target ->
+      | Some cell ->
           Alias_node
             {
               name;
-              resolved = target;
+              resolved = Lazy.from_fun (fun () -> Lazy.force !cell);
               loc = { start_pos = ev.start_pos; end_pos = ev.end_pos };
-              height = 1 + node_height target;
+              height = 1;
               head_comments = [];
               line_comment = None;
             }
       | None -> Types.parse_error ev.start_pos "undefined alias '*%s'" name)
   | Scalar { anchor; tag; value; style } ->
+      let cell = prereq_anchor c anchor in
       let node =
         Scalar_node
           {
@@ -78,9 +93,10 @@ let rec compose_node (c : t) ~(depth : int) : node =
             line_comment = None;
           }
       in
-      Option.iter (fun n -> register_anchor c n node) anchor;
+      fill_anchor cell node;
       node
   | Sequence_start { anchor; tag; flow; _ } ->
+      let cell = prereq_anchor c anchor in
       let start_pos = ev.start_pos in
       let end_pos = ref ev.end_pos in
       let items = ref [] in
@@ -112,9 +128,10 @@ let rec compose_node (c : t) ~(depth : int) : node =
             foot_comments = [];
           }
       in
-      Option.iter (fun n -> register_anchor c n node) anchor;
+      fill_anchor cell node;
       node
   | Mapping_start { anchor; tag; flow; _ } ->
+      let cell = prereq_anchor c anchor in
       let start_pos = ev.start_pos in
       let end_pos = ref ev.end_pos in
       let pairs = ref [] in
@@ -152,7 +169,7 @@ let rec compose_node (c : t) ~(depth : int) : node =
             foot_comments = [];
           }
       in
-      Option.iter (fun n -> register_anchor c n node) anchor;
+      fill_anchor cell node;
       node
   | _ ->
       Types.parse_error ev.start_pos

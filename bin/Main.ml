@@ -143,7 +143,6 @@ type noloc_node =
     }
   | Alias of {
       name : string;
-      resolved : noloc_node;
       head_comments : string list;
       line_comment : string option;
     }
@@ -193,7 +192,6 @@ let rec noloc_node = function
       Alias
         {
           name = r.name;
-          resolved = noloc_node r.resolved;
           head_comments = r.head_comments;
           line_comment = r.line_comment;
         }

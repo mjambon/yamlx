@@ -100,7 +100,7 @@ type node = Types.node =
     }
   | Alias_node of {
       name : string;
-      resolved : node;
+      resolved : node Lazy.t; [@opaque]
       loc : loc;
       height : int;
       head_comments : string list;
@@ -198,6 +198,7 @@ type error = Types.error =
   | Schema_error of yaml_error
   | Simplicity_error of yaml_error
   | Duplicate_key_error of yaml_error
+  | Cycle_error of yaml_error
 [@@deriving show { with_path = false }]
 
 exception Error = Types.Error
@@ -268,6 +269,7 @@ let catch_errors ?file ?(format_loc = default_format_loc) f =
   | Error (Simplicity_error e) -> Result.Error (pos_error "simplicity error" e)
   | Error (Duplicate_key_error e) ->
       Result.Error (pos_error "duplicate key error" e)
+  | Error (Cycle_error e) -> Result.Error (pos_error "cycle error" e)
 
 let register_exception_printers ?(format_loc = default_format_loc) () =
   Printexc.register_printer (function
@@ -291,6 +293,8 @@ let register_exception_printers ?(format_loc = default_format_loc) () =
         Some
           ("YAMLx.Error (Duplicate_key_error): " ^ format_loc e.loc ^ ": "
          ^ e.msg)
+    | Error (Cycle_error e) ->
+        Some ("YAMLx.Error (Cycle_error): " ^ format_loc e.loc ^ ": " ^ e.msg)
     | _ -> None)
 
 (* ------------------------------------------------------------------ *)

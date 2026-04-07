@@ -360,7 +360,7 @@ let rec normalize_plain ~strict ~limit ~counter node =
   tick ~limit ~counter;
   match node with
   | Alias_node { resolved; _ } ->
-      normalize_plain ~strict ~limit ~counter resolved
+      normalize_plain ~strict ~limit ~counter (Lazy.force resolved)
   | Scalar_node { tag = Some t; _ } when strict ->
       plain_error "tags are not allowed in plain YAML (tag: %s)" t
   | Scalar_node r -> Scalar_node { r with anchor = None; tag = None }

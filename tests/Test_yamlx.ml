@@ -1100,6 +1100,47 @@ let strict_keys_tests () =
   ]
 
 (* ------------------------------------------------------------------ *)
+(* Cycle-detection tests                                                 *)
+(* ------------------------------------------------------------------ *)
+
+let cycle_tests () =
+  let check_cycle label yaml () =
+    (* of_yaml wraps errors as Result; verify cyclic YAML returns an error *)
+    match YAMLx.Values.of_yaml yaml with
+    | Error _ -> ignore label
+    | Ok _ -> failwith (label ^ ": expected cycle error but succeeded")
+  in
+  let check_cycle_exn label yaml () =
+    match YAMLx.Values.of_yaml_exn yaml with
+    | _ -> failwith (label ^ ": expected Cycle_error but succeeded")
+    | exception YAMLx.Error (YAMLx.Cycle_error _) -> ()
+    | exception YAMLx.Error _ ->
+        failwith (label ^ ": expected Cycle_error, got a different error")
+  in
+  let check_ok_yaml label yaml () =
+    (* Non-cyclic aliases still resolve fine *)
+    ignore (YAMLx.Values.of_yaml_exn yaml);
+    ignore label
+  in
+  let cat = [ "cycle" ] in
+  [
+    Testo.create ~category:cat "self-referential mapping raises Cycle_error"
+      (check_cycle_exn "self-map" "&doc\na: *doc");
+    Testo.create ~category:cat "self-referential sequence raises Cycle_error"
+      (check_cycle_exn "self-seq" "&doc\n- *doc");
+    Testo.create ~category:cat "cycle error reported via of_yaml result"
+      (check_cycle "result" "&doc\na: *doc");
+    Testo.create ~category:cat "non-cyclic shared alias resolves fine"
+      (check_ok_yaml "shared" "anchor: &v hello\nfirst: *v\nsecond: *v");
+    Testo.create ~category:cat "-f yaml prints cyclic YAML without error"
+      (fun () ->
+        let nodes = YAMLx.Nodes.of_yaml_exn "&doc\na: *doc" in
+        let yaml = YAMLx.Nodes.to_yaml nodes in
+        if not (String.length yaml > 0) then
+          failwith "expected non-empty YAML output");
+  ]
+
+(* ------------------------------------------------------------------ *)
 (* Entry point                                                           *)
 (* ------------------------------------------------------------------ *)
 
@@ -1110,4 +1151,4 @@ let () =
       @ anchor_tests () @ printer_tests () @ expansion_limit_tests ()
       @ depth_limit_tests () @ performance_tests () @ conversion_tests ()
       @ duplicate_key_tests () @ yaml_1_1_tests () @ plain_mode_tests ()
-      @ strict_keys_tests () @ suite_tests ())
+      @ strict_keys_tests () @ cycle_tests () @ suite_tests ())
