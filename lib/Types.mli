@@ -60,6 +60,10 @@ type error =
       (** A mapping contains a duplicate key. Raised when [~strict_keys:true] is
           passed to resolver functions. The location points to the second
           (duplicate) occurrence. *)
+  | Cycle_error of yaml_error
+      (** A cyclic alias was encountered during value resolution. The YAML
+          structure is valid but cannot be represented as a finite [value] tree.
+          The location points to the alias node that closes the cycle. *)
 
 exception Error of error
 
@@ -197,7 +201,8 @@ type node =
     }
   | Alias_node of {
       name : string;
-      resolved : node;
+      resolved : node Lazy.t;
+          (** The node this alias refers to. Lazy to allow cyclic structures. *)
       loc : loc;
       height : int;
       head_comments : string list;

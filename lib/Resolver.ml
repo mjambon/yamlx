@@ -534,118 +534,130 @@ let check_simple ~plain (node : Types.node) =
   end
 
 let rec resolve_node ~schema ~reject_ambiguous ~plain ~strict_keys ~limit
-    ~counter (node : Types.node) : Types.value =
+    ~counter ~visiting (node : Types.node) : Types.value =
   tick ~limit ~counter;
   check_simple ~plain node;
-  match node with
-  | Scalar_node { tag; value; style; loc; _ } ->
-      resolve_scalar ~schema ~reject_ambiguous ~loc ~explicit_tag:tag ~style
-        ~value
-  | Sequence_node { items; loc; _ } ->
-      Seq
-        ( loc,
-          List_ext.map
-            (resolve_node ~schema ~reject_ambiguous ~plain ~strict_keys ~limit
-               ~counter)
-            items )
-  | Mapping_node { pairs; loc; _ } -> (
-      let resolve =
-        resolve_node ~schema ~reject_ambiguous ~plain ~strict_keys ~limit
-          ~counter
-      in
-      match schema with
-      | Yaml_1_2 ->
-          (* In 1.2 mode, check for merge keys when reject_ambiguous is set *)
-          let pairs_resolved =
+  visiting := node :: !visiting;
+  let result =
+    match node with
+    | Scalar_node { tag; value; style; loc; _ } ->
+        resolve_scalar ~schema ~reject_ambiguous ~loc ~explicit_tag:tag ~style
+          ~value
+    | Sequence_node { items; loc; _ } ->
+        Seq
+          ( loc,
             List_ext.map
-              (fun (k, v) ->
-                let pair_loc =
-                  {
-                    start_pos = (node_loc k).start_pos;
-                    end_pos = (node_loc v).end_pos;
-                  }
-                in
-                let k' = resolve k in
-                (* Flag <<  as ambiguous if requested *)
-                if
-                  reject_ambiguous
-                  &&
-                  match k with
-                  | Scalar_node { value = "<<"; style = Plain; tag = None; _ }
-                    ->
-                      true
-                  | _ -> false
-                then
-                  raise
-                    (Types.Error
-                       (Types.Schema_error
-                          {
-                            msg =
-                              "mapping key \"<<\" is a merge key in YAML 1.1 \
-                               but a plain string in YAML 1.2";
-                            loc = node_loc k;
-                          }))
-                else (pair_loc, k', resolve v))
-              pairs
-          in
-          let pairs_final, _ =
-            if strict_keys then
-              (pairs_resolved, check_unique_keys pairs_resolved)
-            else dedup_keep_last pairs_resolved
-          in
-          Map (loc, pairs_final)
-      | Yaml_1_1 ->
-          (* Separate merge-key pairs from regular pairs *)
-          let regular =
-            List.filter (fun (k, _) -> not (is_merge_key_node k)) pairs
-          in
-          let merge_nodes =
-            List.filter_map
-              (fun (k, v) -> if is_merge_key_node k then Some v else None)
-              pairs
-          in
-          (* In plain mode, merge keys are not allowed *)
-          (if plain && merge_nodes <> [] then
-             let merge_k =
-               fst (List.find (fun (k, _) -> is_merge_key_node k) pairs)
-             in
-             raise
-               (Types.Error
-                  (Types.Simplicity_error
-                     {
-                       msg = "merge key '<<' is not allowed in plain mode";
-                       loc = node_loc merge_k;
-                     })));
-          (* Resolve regular pairs *)
-          let reg_resolved =
-            List_ext.map
-              (fun (k, v) ->
-                let pair_loc =
-                  {
-                    start_pos = (node_loc k).start_pos;
-                    end_pos = (node_loc v).end_pos;
-                  }
-                in
-                (pair_loc, resolve k, resolve v))
-              regular
-          in
-          (* Resolve merge values and expand *)
-          let merge_expanded =
-            List.concat_map
-              (fun mv -> expand_merge_value (resolve mv))
-              merge_nodes
-          in
-          (* Check/deduplicate regular pairs; keep merged keys not already
-             present among the regular keys *)
-          let reg_final, reg_keys =
-            if strict_keys then (reg_resolved, check_unique_keys reg_resolved)
-            else dedup_keep_last reg_resolved
-          in
-          let extra = keep_new_keys reg_keys merge_expanded in
-          Map (loc, reg_final @ extra))
-  | Alias_node { resolved; _ } ->
-      resolve_node ~schema ~reject_ambiguous ~plain ~strict_keys ~limit ~counter
-        resolved
+              (resolve_node ~schema ~reject_ambiguous ~plain ~strict_keys ~limit
+                 ~counter ~visiting)
+              items )
+    | Mapping_node { pairs; loc; _ } -> (
+        let resolve =
+          resolve_node ~schema ~reject_ambiguous ~plain ~strict_keys ~limit
+            ~counter ~visiting
+        in
+        match schema with
+        | Yaml_1_2 ->
+            (* In 1.2 mode, check for merge keys when reject_ambiguous is set *)
+            let pairs_resolved =
+              List_ext.map
+                (fun (k, v) ->
+                  let pair_loc =
+                    {
+                      start_pos = (node_loc k).start_pos;
+                      end_pos = (node_loc v).end_pos;
+                    }
+                  in
+                  let k' = resolve k in
+                  (* Flag <<  as ambiguous if requested *)
+                  if
+                    reject_ambiguous
+                    &&
+                    match k with
+                    | Scalar_node { value = "<<"; style = Plain; tag = None; _ }
+                      ->
+                        true
+                    | _ -> false
+                  then
+                    raise
+                      (Types.Error
+                         (Types.Schema_error
+                            {
+                              msg =
+                                "mapping key \"<<\" is a merge key in YAML 1.1 \
+                                 but a plain string in YAML 1.2";
+                              loc = node_loc k;
+                            }))
+                  else (pair_loc, k', resolve v))
+                pairs
+            in
+            let pairs_final, _ =
+              if strict_keys then
+                (pairs_resolved, check_unique_keys pairs_resolved)
+              else dedup_keep_last pairs_resolved
+            in
+            Map (loc, pairs_final)
+        | Yaml_1_1 ->
+            (* Separate merge-key pairs from regular pairs *)
+            let regular =
+              List.filter (fun (k, _) -> not (is_merge_key_node k)) pairs
+            in
+            let merge_nodes =
+              List.filter_map
+                (fun (k, v) -> if is_merge_key_node k then Some v else None)
+                pairs
+            in
+            (* In plain mode, merge keys are not allowed *)
+            (if plain && merge_nodes <> [] then
+               let merge_k =
+                 fst (List.find (fun (k, _) -> is_merge_key_node k) pairs)
+               in
+               raise
+                 (Types.Error
+                    (Types.Simplicity_error
+                       {
+                         msg = "merge key '<<' is not allowed in plain mode";
+                         loc = node_loc merge_k;
+                       })));
+            (* Resolve regular pairs *)
+            let reg_resolved =
+              List_ext.map
+                (fun (k, v) ->
+                  let pair_loc =
+                    {
+                      start_pos = (node_loc k).start_pos;
+                      end_pos = (node_loc v).end_pos;
+                    }
+                  in
+                  (pair_loc, resolve k, resolve v))
+                regular
+            in
+            (* Resolve merge values and expand *)
+            let merge_expanded =
+              List.concat_map
+                (fun mv -> expand_merge_value (resolve mv))
+                merge_nodes
+            in
+            (* Check/deduplicate regular pairs; keep merged keys not already
+               present among the regular keys *)
+            let reg_final, reg_keys =
+              if strict_keys then (reg_resolved, check_unique_keys reg_resolved)
+              else dedup_keep_last reg_resolved
+            in
+            let extra = keep_new_keys reg_keys merge_expanded in
+            Map (loc, reg_final @ extra))
+    | Alias_node { resolved; loc; _ } ->
+        let target = Lazy.force resolved in
+        if List.memq target !visiting then
+          raise
+            (Types.Error
+               (Types.Cycle_error
+                  { msg = "cyclic alias cannot be represented as a value"; loc }))
+        else
+          resolve_node ~schema ~reject_ambiguous ~plain ~strict_keys ~limit
+            ~counter ~visiting target
+  in
+  visiting := List.tl !visiting;
+  result
 
 let resolve_documents ?(expansion_limit = Types.default_expansion_limit)
     ?(schema = Yaml_1_2) ?(strict_schema = false) ?(reject_ambiguous = false)
@@ -659,6 +671,7 @@ let resolve_documents ?(expansion_limit = Types.default_expansion_limit)
         effective_schema ~strict_schema ~requested:schema ~loc:(node_loc node)
           doc_version
       in
+      let visiting = ref [] in
       resolve_node ~schema:eff_schema ~reject_ambiguous ~plain ~strict_keys
-        ~limit:expansion_limit ~counter node)
+        ~limit:expansion_limit ~counter ~visiting node)
     versioned_nodes
