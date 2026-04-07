@@ -112,6 +112,10 @@ type error =
       (** A YAML feature not allowed in plain mode was encountered: an anchor,
           alias, explicit tag, or (in YAML 1.1 mode) a merge key ([<<]). Raised
           when [~plain:true] is passed to {!Values} functions. *)
+  | Duplicate_key_error of yaml_error
+      (** A mapping contains a duplicate key. Raised when [~strict_keys:true]
+          is passed to {!Values} functions. The location points to the second
+          (duplicate) occurrence. *)
 
 exception Error of error
 (** The single exception raised by this library. Match on the payload to
@@ -368,6 +372,7 @@ module Values : sig
     ?strict_schema:bool ->
     ?reject_ambiguous:bool ->
     ?plain:bool ->
+    ?strict_keys:bool ->
     string ->
     (t, string) result
   (** Parse a YAML string and resolve each document to a typed value. Returns
@@ -385,7 +390,11 @@ module Values : sig
 
       [~plain:true] restricts input to plain YAML: raises {!Simplicity_error} if
       any anchor, alias, or explicit tag is encountered, and (in YAML 1.1 mode)
-      if any merge key ([<<]) is encountered. *)
+      if any merge key ([<<]) is encountered.
+
+      [~strict_keys:true] raises {!Duplicate_key_error} when a mapping contains
+      the same key more than once. Without this flag the last occurrence silently
+      wins. *)
 
   val of_yaml_file :
     ?max_depth:int ->
@@ -394,6 +403,7 @@ module Values : sig
     ?strict_schema:bool ->
     ?reject_ambiguous:bool ->
     ?plain:bool ->
+    ?strict_keys:bool ->
     string ->
     (t, string) result
   (** Like {!of_yaml} but reads the YAML from the file at the given path.
@@ -407,6 +417,7 @@ module Values : sig
     ?strict_schema:bool ->
     ?reject_ambiguous:bool ->
     ?plain:bool ->
+    ?strict_keys:bool ->
     string ->
     t
   (** Like {!of_yaml} but raises instead of returning a result.
@@ -418,7 +429,8 @@ module Values : sig
       [expansion_limit] (default: {!default_expansion_limit}),
       [(Schema_error _)] on schema conflicts (see [~strict_schema] and
       [~reject_ambiguous]), [(Simplicity_error _)] on disallowed YAML features
-      (see [~plain]). *)
+      (see [~plain]), [(Duplicate_key_error _)] on duplicate mapping keys
+      (see [~strict_keys]). *)
 
   val of_nodes_exn :
     ?expansion_limit:int ->
@@ -426,6 +438,7 @@ module Values : sig
     ?strict_schema:bool ->
     ?reject_ambiguous:bool ->
     ?plain:bool ->
+    ?strict_keys:bool ->
     node list ->
     t
   (** Resolve a list of AST nodes to typed values. The [%YAML] version directive
@@ -434,7 +447,8 @@ module Values : sig
 
       Raises {!Error} [(Expansion_limit_exceeded _)] on excessive alias
       expansion, [(Schema_error _)] on ambiguity (see [~reject_ambiguous]),
-      [(Simplicity_error _)] on disallowed features (see [~plain]). *)
+      [(Simplicity_error _)] on disallowed features (see [~plain]),
+      [(Duplicate_key_error _)] on duplicate keys (see [~strict_keys]). *)
 
   val of_nodes :
     ?expansion_limit:int ->
@@ -442,6 +456,7 @@ module Values : sig
     ?strict_schema:bool ->
     ?reject_ambiguous:bool ->
     ?plain:bool ->
+    ?strict_keys:bool ->
     node list ->
     (t, string) result
   (** Like {!of_nodes_exn} but returns [Ok values] on success or [Error msg] on
@@ -455,6 +470,7 @@ module Values : sig
     ?strict_schema:bool ->
     ?reject_ambiguous:bool ->
     ?plain:bool ->
+    ?strict_keys:bool ->
     string ->
     (value, string) result
   (** Like {!one_of_yaml_exn} but returns [Ok v] on success or [Error msg] on
@@ -467,6 +483,7 @@ module Values : sig
     ?strict_schema:bool ->
     ?reject_ambiguous:bool ->
     ?plain:bool ->
+    ?strict_keys:bool ->
     string ->
     (value, string) result
   (** Like {!one_of_yaml} but reads from a file. *)
@@ -478,6 +495,7 @@ module Values : sig
     ?strict_schema:bool ->
     ?reject_ambiguous:bool ->
     ?plain:bool ->
+    ?strict_keys:bool ->
     string ->
     value
   (** Parse a YAML string expecting exactly one document and return its value.

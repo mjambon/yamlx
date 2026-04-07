@@ -1060,6 +1060,46 @@ let plain_mode_tests () =
   ]
 
 (* ------------------------------------------------------------------ *)
+(* Strict-keys tests                                                     *)
+(* ------------------------------------------------------------------ *)
+
+let strict_keys_tests () =
+  let check_ok label yaml () =
+    ignore (YAMLx.Values.of_yaml_exn ~strict_keys:true yaml);
+    ignore label
+  in
+  let check_dup_error label yaml () =
+    match YAMLx.Values.of_yaml_exn ~strict_keys:true yaml with
+    | exception YAMLx.Error (YAMLx.Duplicate_key_error _) -> ()
+    | _ -> failwith (label ^ ": expected Duplicate_key_error")
+  in
+  let cat = [ "strict-keys" ] in
+  [
+    Testo.create ~category:cat "unique keys accepted"
+      (check_ok "unique" "a: 1\nb: 2\nc: 3");
+    Testo.create ~category:cat "empty mapping accepted" (check_ok "empty" "{}");
+    Testo.create ~category:cat "duplicate key raises Duplicate_key_error"
+      (check_dup_error "dup" "a: 1\nb: 2\na: 3");
+    Testo.create ~category:cat "duplicate key in nested mapping raises"
+      (check_dup_error "nested dup" "outer:\n  x: 1\n  x: 2");
+    Testo.create ~category:cat
+      "duplicate key in YAML 1.1 raises Duplicate_key_error" (fun () ->
+        match
+          YAMLx.Values.of_yaml_exn ~schema:YAMLx.Yaml_1_1 ~strict_keys:true
+            "a: 1\nb: 2\na: 3"
+        with
+        | exception YAMLx.Error (YAMLx.Duplicate_key_error _) -> ()
+        | _ -> failwith "expected Duplicate_key_error");
+    Testo.create ~category:cat
+      "without strict_keys duplicate key is silently deduplicated" (fun () ->
+        match YAMLx.Values.of_yaml_exn "a: 1\na: 2" with
+        | [ YAMLx.Map (_, [ (_, YAMLx.String (_, "a"), YAMLx.Int (_, 2L)) ]) ]
+          ->
+            ()
+        | _ -> failwith "expected last value to win");
+  ]
+
+(* ------------------------------------------------------------------ *)
 (* Entry point                                                           *)
 (* ------------------------------------------------------------------ *)
 
@@ -1070,4 +1110,4 @@ let () =
       @ anchor_tests () @ printer_tests () @ expansion_limit_tests ()
       @ depth_limit_tests () @ performance_tests () @ conversion_tests ()
       @ duplicate_key_tests () @ yaml_1_1_tests () @ plain_mode_tests ()
-      @ suite_tests ())
+      @ strict_keys_tests () @ suite_tests ())

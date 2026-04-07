@@ -458,6 +458,20 @@ let dedup_keep_last pairs =
   in
   List.rev deduped
 
+(** Raise [Duplicate_key_error] if any key appears more than once. The error
+    location points to the second (duplicate) key-value pair. *)
+let check_unique_keys pairs =
+  let seen = Value_hashtbl.create 10 in
+  List.iter
+    (fun (pair_loc, k, _) ->
+      if Value_hashtbl.mem seen k then
+        raise
+          (Types.Error
+             (Types.Duplicate_key_error
+                { msg = "duplicate mapping key"; loc = pair_loc }))
+      else Value_hashtbl.add seen k ())
+    pairs
+
 (* ------------------------------------------------------------------ *)
 (* Full node resolution                                                  *)
 (* ------------------------------------------------------------------ *)
@@ -532,8 +546,8 @@ let check_simple ~plain (node : Types.node) =
     | None -> ()
   end
 
-let rec resolve_node ~schema ~reject_ambiguous ~plain ~limit ~counter
-    (node : Types.node) : Types.value =
+let rec resolve_node ~schema ~reject_ambiguous ~plain ~strict_keys ~limit
+    ~counter (node : Types.node) : Types.value =
   tick ~limit ~counter;
   check_simple ~plain node;
   match node with
@@ -544,11 +558,13 @@ let rec resolve_node ~schema ~reject_ambiguous ~plain ~limit ~counter
       Seq
         ( loc,
           List_ext.map
-            (resolve_node ~schema ~reject_ambiguous ~plain ~limit ~counter)
+            (resolve_node ~schema ~reject_ambiguous ~plain ~strict_keys ~limit
+               ~counter)
             items )
   | Mapping_node { pairs; loc; _ } -> (
       let resolve =
-        resolve_node ~schema ~reject_ambiguous ~plain ~limit ~counter
+        resolve_node ~schema ~reject_ambiguous ~plain ~strict_keys ~limit
+          ~counter
       in
       match schema with
       | Yaml_1_2 ->
@@ -585,7 +601,10 @@ let rec resolve_node ~schema ~reject_ambiguous ~plain ~limit ~counter
                 else (pair_loc, k', resolve v))
               pairs
           in
-          Map (loc, dedup_keep_last pairs_resolved)
+          if strict_keys then (
+            check_unique_keys pairs_resolved;
+            Map (loc, pairs_resolved))
+          else Map (loc, dedup_keep_last pairs_resolved)
       | Yaml_1_1 ->
           (* Separate merge-key pairs from regular pairs *)
           let regular =
@@ -627,28 +646,46 @@ let rec resolve_node ~schema ~reject_ambiguous ~plain ~limit ~counter
               (fun mv -> expand_merge_value (resolve mv))
               merge_nodes
           in
-          (* Deduplicate regular pairs (last occurrence wins) *)
-          let reg_resolved = dedup_keep_last reg_resolved in
-          (* Deduplicate: regular keys win; among merged, earlier wins *)
-          let defined = List.map (fun (_, k, _) -> k) reg_resolved in
-          let seen = ref defined in
-          let extra =
-            List.filter
-              (fun (_, k, _) ->
-                if List.exists (Types.equal_value k) !seen then false
-                else (
-                  seen := k :: !seen;
-                  true))
-              merge_expanded
-          in
-          Map (loc, reg_resolved @ extra))
+          if strict_keys then (
+            check_unique_keys reg_resolved;
+            (* Deduplicate: regular keys win over merged keys *)
+            let defined = List.map (fun (_, k, _) -> k) reg_resolved in
+            let seen = ref defined in
+            let extra =
+              List.filter
+                (fun (_, k, _) ->
+                  if List.exists (Types.equal_value k) !seen then false
+                  else (
+                    seen := k :: !seen;
+                    true))
+                merge_expanded
+            in
+            Map (loc, reg_resolved @ extra))
+          else
+            (* Deduplicate regular pairs (last occurrence wins) *)
+            let reg_resolved = dedup_keep_last reg_resolved in
+            (* Deduplicate: regular keys win; among merged, earlier wins *)
+            let defined = List.map (fun (_, k, _) -> k) reg_resolved in
+            let seen = ref defined in
+            let extra =
+              List.filter
+                (fun (_, k, _) ->
+                  if List.exists (Types.equal_value k) !seen then false
+                  else (
+                    seen := k :: !seen;
+                    true))
+                merge_expanded
+            in
+            Map (loc, reg_resolved @ extra))
   | Alias_node { resolved; _ } ->
-      resolve_node ~schema ~reject_ambiguous ~plain ~limit ~counter resolved
+      resolve_node ~schema ~reject_ambiguous ~plain ~strict_keys ~limit ~counter
+        resolved
 
 let resolve_documents ?(expansion_limit = Types.default_expansion_limit)
     ?(schema = Yaml_1_2) ?(strict_schema = false) ?(reject_ambiguous = false)
-    ?(plain = false) (versioned_nodes : ((int * int) option * Types.node) list)
-    : Types.value list =
+    ?(plain = false) ?(strict_keys = false)
+    (versioned_nodes : ((int * int) option * Types.node) list) :
+    Types.value list =
   let counter = ref 0 in
   List_ext.map
     (fun (doc_version, node) ->
@@ -656,6 +693,6 @@ let resolve_documents ?(expansion_limit = Types.default_expansion_limit)
         effective_schema ~strict_schema ~requested:schema ~loc:(node_loc node)
           doc_version
       in
-      resolve_node ~schema:eff_schema ~reject_ambiguous ~plain
+      resolve_node ~schema:eff_schema ~reject_ambiguous ~plain ~strict_keys
         ~limit:expansion_limit ~counter node)
     versioned_nodes

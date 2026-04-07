@@ -90,6 +90,19 @@
   `?format_loc` parameter to plug in a custom location formatter (e.g.
   for LSP servers or structured logging).
 
+### Strict-keys mode
+
+- New `?strict_keys:bool` option on all `Values` functions. When
+  `~strict_keys:true`, the resolver raises `Duplicate_key_error` if a mapping
+  contains the same key more than once. Without this flag the last occurrence
+  silently wins (existing behaviour, unchanged). Works in both YAML 1.1 and 1.2
+  modes; in YAML 1.1 mode only regular (non-merged) keys are checked.
+- New `Duplicate_key_error of yaml_error` error variant (carries source
+  location of the second occurrence). Handled by `catch_errors` (renders as
+  `"duplicate key error: …"`) and `register_exception_printers`.
+- New `--strict-keys` flag for the `yamlx` command, applicable with
+  `-f value` and `-f value-loc`.
+
 ### Plain mode (input restriction)
 
 - New `?plain:bool` option on all `Values` functions (`of_yaml`,
