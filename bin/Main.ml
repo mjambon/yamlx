@@ -13,7 +13,7 @@
 (* Output format                                                         *)
 (* ------------------------------------------------------------------ *)
 
-type format = Events | Yaml | Plain | Value | Value_loc | Node | Noloc
+type format = Events | Yaml | Plain | Value | Value_loc | Node | Node_loc
 
 let format = ref Yaml
 let strict = ref false
@@ -37,13 +37,13 @@ let set_format s =
   | "value" -> format := Value
   | "value-loc" -> format := Value_loc
   | "node" -> format := Node
-  | "node-noloc" -> format := Noloc
+  | "node-loc" -> format := Node_loc
   | other ->
       raise
         (Arg.Bad
            (Printf.sprintf
               "unknown format %S (choose: yaml, plain, events, value, \
-               value-loc, node, node-noloc)"
+               value-loc, node, node-loc)"
               other))
 
 let usage_msg =
@@ -61,9 +61,8 @@ let usage_msg =
     value   Typed-value tree: Null / Bool / Int / Float / String / Seq / Map
             Useful for checking how scalars are resolved (e.g. is "1e2" a Float?)
     value-loc  Same as value but with source locations
-    node    Full AST with source locations, anchors, tags, scalar styles, and
-            best-effort comment preservation
-    node-noloc  Same as node but without source locations and heights
+    node    Full AST without source locations or heights
+    node-loc  Same as node but with source locations and heights
     events  yaml-test-suite event-tree notation (mainly for parser testing)
 
   YAML schema (--schema VERSION):
@@ -347,18 +346,18 @@ let () =
             let buf = Buffer.create 256 in
             List.iter
               (fun n ->
-                Buffer.add_string buf (YAMLx.show_node n);
+                Buffer.add_string buf (show_noloc_node (noloc_node n));
                 Buffer.add_char buf '\n')
               nodes;
             Buffer.contents buf)
         |> or_die
-    | Noloc ->
+    | Node_loc ->
         get_nodes ()
         |> Result.map (fun nodes ->
             let buf = Buffer.create 256 in
             List.iter
               (fun n ->
-                Buffer.add_string buf (show_noloc_node (noloc_node n));
+                Buffer.add_string buf (YAMLx.show_node n);
                 Buffer.add_char buf '\n')
               nodes;
             Buffer.contents buf)
