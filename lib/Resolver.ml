@@ -434,6 +434,29 @@ let expand_merge_value = function
   | _ -> []
 
 (* ------------------------------------------------------------------ *)
+(* Key deduplication                                                     *)
+(* ------------------------------------------------------------------ *)
+
+(** Keep only the last occurrence of each key in a resolved pair list,
+    preserving the relative order of surviving entries.
+
+    Implemented by reversing, keeping the first occurrence of each key (= last
+    in the original), then reversing back. *)
+let dedup_keep_last pairs =
+  let rev = List.rev pairs in
+  let seen = ref [] in
+  let deduped =
+    List.filter
+      (fun (_, k, _) ->
+        if List.exists (equal_val k) !seen then false
+        else (
+          seen := k :: !seen;
+          true))
+      rev
+  in
+  List.rev deduped
+
+(* ------------------------------------------------------------------ *)
 (* Full node resolution                                                  *)
 (* ------------------------------------------------------------------ *)
 
@@ -466,38 +489,39 @@ let rec resolve_node ~schema ~reject_ambiguous ~limit ~counter
       match schema with
       | Yaml_1_2 ->
           (* In 1.2 mode, check for merge keys when reject_ambiguous is set *)
-          Map
-            ( loc,
-              List_ext.map
-                (fun (k, v) ->
-                  let pair_loc =
-                    {
-                      start_pos = (node_loc k).start_pos;
-                      end_pos = (node_loc v).end_pos;
-                    }
-                  in
-                  let k' = resolve k in
-                  (* Flag <<  as ambiguous if requested *)
-                  if
-                    reject_ambiguous
-                    &&
-                    match k with
-                    | Scalar_node { value = "<<"; style = Plain; tag = None; _ }
-                      ->
-                        true
-                    | _ -> false
-                  then
-                    raise
-                      (Types.Error
-                         (Types.Schema_error
-                            {
-                              msg =
-                                "mapping key \"<<\" is a merge key in YAML 1.1 \
-                                 but a plain string in YAML 1.2";
-                              loc = node_loc k;
-                            }))
-                  else (pair_loc, k', resolve v))
-                pairs )
+          let pairs_resolved =
+            List_ext.map
+              (fun (k, v) ->
+                let pair_loc =
+                  {
+                    start_pos = (node_loc k).start_pos;
+                    end_pos = (node_loc v).end_pos;
+                  }
+                in
+                let k' = resolve k in
+                (* Flag <<  as ambiguous if requested *)
+                if
+                  reject_ambiguous
+                  &&
+                  match k with
+                  | Scalar_node { value = "<<"; style = Plain; tag = None; _ }
+                    ->
+                      true
+                  | _ -> false
+                then
+                  raise
+                    (Types.Error
+                       (Types.Schema_error
+                          {
+                            msg =
+                              "mapping key \"<<\" is a merge key in YAML 1.1 \
+                               but a plain string in YAML 1.2";
+                            loc = node_loc k;
+                          }))
+                else (pair_loc, k', resolve v))
+              pairs
+          in
+          Map (loc, dedup_keep_last pairs_resolved)
       | Yaml_1_1 ->
           (* Separate merge-key pairs from regular pairs *)
           let regular =
@@ -527,6 +551,8 @@ let rec resolve_node ~schema ~reject_ambiguous ~limit ~counter
               (fun mv -> expand_merge_value (resolve mv))
               merge_nodes
           in
+          (* Deduplicate regular pairs (last occurrence wins) *)
+          let reg_resolved = dedup_keep_last reg_resolved in
           (* Deduplicate: regular keys win; among merged, earlier wins *)
           let defined = List.map (fun (_, k, _) -> k) reg_resolved in
           let seen = ref defined in

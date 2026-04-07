@@ -719,6 +719,68 @@ let conversion_tests () =
   ]
 
 (* ------------------------------------------------------------------ *)
+(* Duplicate key tests                                                   *)
+(* ------------------------------------------------------------------ *)
+
+let duplicate_key_tests () =
+  let str s = YAMLx.String (z, s) in
+  let int_ n = YAMLx.Int (z, Int64.of_int n) in
+  let get_map yaml =
+    match YAMLx.Values.of_yaml_exn yaml with
+    | [ YAMLx.Map (_, pairs) ] -> pairs
+    | _ -> failwith "expected a single Map"
+  in
+  let keys pairs = List.map (fun (_, k, _) -> k) pairs in
+  let value_of key pairs =
+    List.find_map
+      (fun (_, k, v) -> if YAMLx.equal_value k key then Some v else None)
+      pairs
+  in
+  [
+    Testo.create ~category:[ "duplicate-keys" ]
+      "last occurrence wins in YAML 1.2" (fun () ->
+        let pairs = get_map "a: 1\nb: 2\na: 3\n" in
+        (* only one 'a' key *)
+        assert (List.length pairs = 2);
+        (* its value is 3, not 1 *)
+        Testo.(check yamlx_values)
+          [ int_ 3 ]
+          [ Option.get (value_of (str "a") pairs) ]);
+    Testo.create ~category:[ "duplicate-keys" ]
+      "order of surviving keys is preserved" (fun () ->
+        let pairs = get_map "a: 1\nb: 2\na: 3\nc: 4\n" in
+        (* b, a, c — a appears at its last position *)
+        Testo.(check yamlx_values) [ str "b"; str "a"; str "c" ] (keys pairs));
+    Testo.create ~category:[ "duplicate-keys" ]
+      "last occurrence wins in YAML 1.1 (regular pairs)" (fun () ->
+        let pairs =
+          match
+            YAMLx.Values.of_yaml_exn ~schema:YAMLx.Yaml_1_1 "a: 1\nb: 2\na: 3\n"
+          with
+          | [ YAMLx.Map (_, ps) ] -> ps
+          | _ -> failwith "expected Map"
+        in
+        assert (List.length pairs = 2);
+        Testo.(check yamlx_values)
+          [ int_ 3 ]
+          [ Option.get (value_of (str "a") pairs) ]);
+    Testo.create ~category:[ "duplicate-keys" ]
+      "regular key overrides merged key in YAML 1.1" (fun () ->
+        (* explicit 'b: 2' should win over merged 'b: 99' *)
+        let pairs =
+          match
+            YAMLx.Values.of_yaml_exn ~schema:YAMLx.Yaml_1_1
+              "a: 1\nb: 2\n<<:\n  b: 99\n  c: 3\n"
+          with
+          | [ YAMLx.Map (_, ps) ] -> ps
+          | _ -> failwith "expected Map"
+        in
+        Testo.(check yamlx_values)
+          [ int_ 2 ]
+          [ Option.get (value_of (str "b") pairs) ]);
+  ]
+
+(* ------------------------------------------------------------------ *)
 (* YAML 1.1 schema tests                                                 *)
 (* ------------------------------------------------------------------ *)
 
@@ -954,4 +1016,4 @@ let () =
       unit_tests () @ encoding_tests () @ roundtrip_tests () @ comment_tests ()
       @ anchor_tests () @ printer_tests () @ expansion_limit_tests ()
       @ depth_limit_tests () @ performance_tests () @ conversion_tests ()
-      @ yaml_1_1_tests () @ suite_tests ())
+      @ duplicate_key_tests () @ yaml_1_1_tests () @ suite_tests ())
