@@ -113,8 +113,8 @@ type error =
           alias, explicit tag, or (in YAML 1.1 mode) a merge key ([<<]). Raised
           when [~plain:true] is passed to {!Values} functions. *)
   | Duplicate_key_error of yaml_error
-      (** A mapping contains a duplicate key. Raised when [~strict_keys:true]
-          is passed to {!Values} functions. The location points to the second
+      (** A mapping contains a duplicate key. Raised when [~strict_keys:true] is
+          passed to {!Values} functions. The location points to the second
           (duplicate) occurrence. *)
 
 exception Error of error
@@ -393,8 +393,8 @@ module Values : sig
       if any merge key ([<<]) is encountered.
 
       [~strict_keys:true] raises {!Duplicate_key_error} when a mapping contains
-      the same key more than once. Without this flag the last occurrence silently
-      wins. *)
+      the same key more than once. Without this flag the last occurrence
+      silently wins. *)
 
   val of_yaml_file :
     ?max_depth:int ->
@@ -429,8 +429,8 @@ module Values : sig
       [expansion_limit] (default: {!default_expansion_limit}),
       [(Schema_error _)] on schema conflicts (see [~strict_schema] and
       [~reject_ambiguous]), [(Simplicity_error _)] on disallowed YAML features
-      (see [~plain]), [(Duplicate_key_error _)] on duplicate mapping keys
-      (see [~strict_keys]). *)
+      (see [~plain]), [(Duplicate_key_error _)] on duplicate mapping keys (see
+      [~strict_keys]). *)
 
   val of_nodes_exn :
     ?expansion_limit:int ->

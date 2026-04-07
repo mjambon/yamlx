@@ -4,7 +4,7 @@ repos:
       - id: ocamlformat
         name: ocamlformat
         language: system
-        entry: ocamlformat --inplace
+        entry: opam exec -- ocamlformat --inplace
         files: \.(ml|mli)$
       - id: docs
         name: docs

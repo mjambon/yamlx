@@ -318,12 +318,13 @@ let () =
         (match source with
           | `Stdin ->
               YAMLx.Values.of_yaml ~schema:!schema ~strict_schema:!strict_schema
-                ~reject_ambiguous:!reject_ambiguous ~plain:!plain_input ~strict_keys:!strict_keys
-                (read_stdin ())
+                ~reject_ambiguous:!reject_ambiguous ~plain:!plain_input
+                ~strict_keys:!strict_keys (read_stdin ())
           | `File path ->
               YAMLx.Values.of_yaml_file ~schema:!schema
                 ~strict_schema:!strict_schema
-                ~reject_ambiguous:!reject_ambiguous ~plain:!plain_input ~strict_keys:!strict_keys path)
+                ~reject_ambiguous:!reject_ambiguous ~plain:!plain_input
+                ~strict_keys:!strict_keys path)
         |> Result.map (fun values ->
             let buf = Buffer.create 256 in
             List.iter
@@ -337,12 +338,13 @@ let () =
         (match source with
           | `Stdin ->
               YAMLx.Values.of_yaml ~schema:!schema ~strict_schema:!strict_schema
-                ~reject_ambiguous:!reject_ambiguous ~plain:!plain_input ~strict_keys:!strict_keys
-                (read_stdin ())
+                ~reject_ambiguous:!reject_ambiguous ~plain:!plain_input
+                ~strict_keys:!strict_keys (read_stdin ())
           | `File path ->
               YAMLx.Values.of_yaml_file ~schema:!schema
                 ~strict_schema:!strict_schema
-                ~reject_ambiguous:!reject_ambiguous ~plain:!plain_input ~strict_keys:!strict_keys path)
+                ~reject_ambiguous:!reject_ambiguous ~plain:!plain_input
+                ~strict_keys:!strict_keys path)
         |> Result.map (fun values ->
             let buf = Buffer.create 256 in
             List.iter

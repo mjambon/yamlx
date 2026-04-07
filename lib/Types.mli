@@ -57,9 +57,9 @@ type error =
       (** A YAML feature not allowed in plain mode was encountered: an anchor,
           alias, explicit tag, or (in YAML 1.1 mode) a merge key ([<<]). *)
   | Duplicate_key_error of yaml_error
-      (** A mapping contains a duplicate key. Raised when
-          [~strict_keys:true] is passed to resolver functions. The location
-          points to the second (duplicate) occurrence. *)
+      (** A mapping contains a duplicate key. Raised when [~strict_keys:true] is
+          passed to resolver functions. The location points to the second
+          (duplicate) occurrence. *)
 
 exception Error of error
 

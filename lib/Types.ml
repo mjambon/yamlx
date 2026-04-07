@@ -64,9 +64,9 @@ type error =
           alias, explicit tag, or (in YAML 1.1 mode) a merge key ([<<]). Raised
           when [~plain:true] is passed to resolver functions. *)
   | Duplicate_key_error of yaml_error
-      (** A mapping contains a duplicate key. Raised when
-          [~strict_keys:true] is passed to resolver functions. The location
-          points to the second (duplicate) occurrence. *)
+      (** A mapping contains a duplicate key. Raised when [~strict_keys:true] is
+          passed to resolver functions. The location points to the second
+          (duplicate) occurrence. *)
 
 exception Error of error
 (** The single exception raised by this library. Match on the payload to
