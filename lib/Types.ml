@@ -241,3 +241,18 @@ type value =
   | String of loc * string
   | Seq of loc * value list
   | Map of loc * (loc * value * value) list
+
+(** Structural equality that ignores source locations. *)
+let rec equal_value a b =
+  match (a, b) with
+  | Null _, Null _ -> true
+  | Bool (_, x), Bool (_, y) -> x = y
+  | Int (_, x), Int (_, y) -> Int64.equal x y
+  | Float (_, x), Float (_, y) -> Float.equal x y
+  | String (_, x), String (_, y) -> x = y
+  | Seq (_, xs), Seq (_, ys) -> List.equal equal_value xs ys
+  | Map (_, ps), Map (_, qs) ->
+      List.equal
+        (fun (_, k1, v1) (_, k2, v2) -> equal_value k1 k2 && equal_value v1 v2)
+        ps qs
+  | _ -> false

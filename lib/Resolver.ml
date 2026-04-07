@@ -403,23 +403,6 @@ let is_merge_key_node = function
   | Scalar_node { tag = Some t; _ } when t = yaml_prefix ^ "merge" -> true
   | _ -> false
 
-(** Equality on resolved values, location-independent, used for deduplication
-    when merging. Delegates to the existing [equal_value] in YAMLx but we cannot
-    call back up the stack here, so we inline a structural comparison. *)
-let rec equal_val a b =
-  match (a, b) with
-  | Null _, Null _ -> true
-  | Bool (_, x), Bool (_, y) -> x = y
-  | Int (_, x), Int (_, y) -> Int64.equal x y
-  | Float (_, x), Float (_, y) -> Float.equal x y
-  | String (_, x), String (_, y) -> x = y
-  | Seq (_, xs), Seq (_, ys) -> List.equal equal_val xs ys
-  | Map (_, ps), Map (_, qs) ->
-      List.equal
-        (fun (_, k1, v1) (_, k2, v2) -> equal_val k1 k2 && equal_val v1 v2)
-        ps qs
-  | _ -> false
-
 (** Expand a resolved merge value into a list of [(loc, key, value)] triples. A
     merge value must be a [Map] (or a [Seq] of [Map]s); anything else is
     silently ignored. *)
@@ -437,6 +420,25 @@ let expand_merge_value = function
 (* Key deduplication                                                     *)
 (* ------------------------------------------------------------------ *)
 
+(** A hashtable suitable for looking up simple keys in O(1) time and complex
+    keys in O(n) time. *)
+module Value_hashtbl = Hashtbl.Make (struct
+  type t = value
+
+  let equal = Types.equal_value
+
+  (** A hash function that works well for simple values and terribly for
+      sequences and maps. *)
+  let hash = function
+    | Null _ -> 7
+    | Bool (_, x) -> Hashtbl.hash x
+    | Int (_, x) -> Hashtbl.hash x
+    | Float (_, x) -> Hashtbl.hash x
+    | String (_, x) -> Hashtbl.hash x
+    | Seq (_, _xs) -> 8
+    | Map (_, _ps) -> 9
+end)
+
 (** Keep only the last occurrence of each key in a resolved pair list,
     preserving the relative order of surviving entries.
 
@@ -444,13 +446,13 @@ let expand_merge_value = function
     in the original), then reversing back. *)
 let dedup_keep_last pairs =
   let rev = List.rev pairs in
-  let seen = ref [] in
+  let seen = Value_hashtbl.create 10 in
   let deduped =
     List.filter
       (fun (_, k, _) ->
-        if List.exists (equal_val k) !seen then false
+        if Value_hashtbl.mem seen k then false
         else (
-          seen := k :: !seen;
+          Value_hashtbl.add seen k ();
           true))
       rev
   in
@@ -559,7 +561,7 @@ let rec resolve_node ~schema ~reject_ambiguous ~limit ~counter
           let extra =
             List.filter
               (fun (_, k, _) ->
-                if List.exists (equal_val k) !seen then false
+                if List.exists (Types.equal_value k) !seen then false
                 else (
                   seen := k :: !seen;
                   true))

@@ -209,3 +209,6 @@ type value =
   | String of loc * string
   | Seq of loc * value list
   | Map of loc * (loc * value * value) list
+
+val equal_value : value -> value -> bool
+(** Compare two values, ignoring locations *)
