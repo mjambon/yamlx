@@ -193,9 +193,10 @@ type error = Types.error =
   | Parse_error of yaml_error
   | Expansion_limit_exceeded of int
   | Depth_limit_exceeded of int
-  | Plain_error of string
+  | Printer_error of string
   | Document_count_error of string
   | Schema_error of yaml_error
+  | Simplicity_error of yaml_error
 [@@deriving show { with_path = false }]
 
 exception Error = Types.Error
@@ -258,11 +259,12 @@ let catch_errors ?file ?(format_loc = default_format_loc) f =
   | Error (Depth_limit_exceeded n) ->
       Result.Error
         (other_error (Printf.sprintf "depth limit exceeded (%d levels)" n))
-  | Error (Plain_error msg) ->
-      Result.Error (other_error ("plain error: " ^ msg))
+  | Error (Printer_error msg) ->
+      Result.Error (other_error ("printer error: " ^ msg))
   | Error (Document_count_error msg) ->
       Result.Error (other_error ("document count error: " ^ msg))
   | Error (Schema_error e) -> Result.Error (pos_error "schema error" e)
+  | Error (Simplicity_error e) -> Result.Error (pos_error "simplicity error" e)
 
 let register_exception_printers ?(format_loc = default_format_loc) () =
   Printexc.register_printer (function
@@ -274,11 +276,14 @@ let register_exception_printers ?(format_loc = default_format_loc) () =
         Some (Printf.sprintf "YAMLx.Error (Expansion_limit_exceeded %d)" n)
     | Error (Depth_limit_exceeded n) ->
         Some (Printf.sprintf "YAMLx.Error (Depth_limit_exceeded %d)" n)
-    | Error (Plain_error msg) -> Some ("YAMLx.Error (Plain_error): " ^ msg)
+    | Error (Printer_error msg) -> Some ("YAMLx.Error (Printer_error): " ^ msg)
     | Error (Document_count_error msg) ->
         Some ("YAMLx.Error (Document_count_error): " ^ msg)
     | Error (Schema_error e) ->
         Some ("YAMLx.Error (Schema_error): " ^ format_loc e.loc ^ ": " ^ e.msg)
+    | Error (Simplicity_error e) ->
+        Some
+          ("YAMLx.Error (Simplicity_error): " ^ format_loc e.loc ^ ": " ^ e.msg)
     | _ -> None)
 
 (* ------------------------------------------------------------------ *)
@@ -465,19 +470,19 @@ module Values = struct
 
   let of_yaml_exn ?(max_depth = Types.default_max_depth)
       ?(expansion_limit = Types.default_expansion_limit) ?schema ?strict_schema
-      ?reject_ambiguous (input : string) : value list =
+      ?reject_ambiguous ?plain (input : string) : value list =
     let versioned = parse_nodes_versioned ~max_depth input in
     Resolver.resolve_documents ~expansion_limit ?schema ?strict_schema
-      ?reject_ambiguous versioned
+      ?reject_ambiguous ?plain versioned
 
   let of_yaml ?file ?max_depth ?expansion_limit ?schema ?strict_schema
-      ?reject_ambiguous input =
+      ?reject_ambiguous ?plain input =
     catch_errors ?file (fun () ->
         of_yaml_exn ?max_depth ?expansion_limit ?schema ?strict_schema
-          ?reject_ambiguous input)
+          ?reject_ambiguous ?plain input)
 
   let of_yaml_file ?max_depth ?expansion_limit ?schema ?strict_schema
-      ?reject_ambiguous path =
+      ?reject_ambiguous ?plain path =
     match
       try Ok (read_file path) with
       | Sys_error msg -> Result.Error msg
@@ -485,25 +490,26 @@ module Values = struct
     | Result.Error msg -> Result.Error ("file " ^ path ^ ": " ^ msg)
     | Ok input ->
         of_yaml ~file:path ?max_depth ?expansion_limit ?schema ?strict_schema
-          ?reject_ambiguous input
+          ?reject_ambiguous ?plain input
 
   let of_nodes_exn ?(expansion_limit = Types.default_expansion_limit) ?schema
-      ?strict_schema ?reject_ambiguous nodes =
+      ?strict_schema ?reject_ambiguous ?plain nodes =
     (* Nodes without version info: pass None for each document. *)
     let versioned = List.map (fun n -> (None, n)) nodes in
     Resolver.resolve_documents ~expansion_limit ?schema ?strict_schema
-      ?reject_ambiguous versioned
+      ?reject_ambiguous ?plain versioned
 
-  let of_nodes ?expansion_limit ?schema ?strict_schema ?reject_ambiguous nodes =
+  let of_nodes ?expansion_limit ?schema ?strict_schema ?reject_ambiguous ?plain
+      nodes =
     catch_errors (fun () ->
         of_nodes_exn ?expansion_limit ?schema ?strict_schema ?reject_ambiguous
-          nodes)
+          ?plain nodes)
 
   let one_of_yaml_exn ?max_depth ?expansion_limit ?schema ?strict_schema
-      ?reject_ambiguous input =
+      ?reject_ambiguous ?plain input =
     match
       of_yaml_exn ?max_depth ?expansion_limit ?schema ?strict_schema
-        ?reject_ambiguous input
+        ?reject_ambiguous ?plain input
     with
     | [] -> raise (Error (Document_count_error "no document in input"))
     | [ v ] -> v
@@ -511,13 +517,13 @@ module Values = struct
         raise (Error (Document_count_error "multiple documents in input"))
 
   let one_of_yaml ?file ?max_depth ?expansion_limit ?schema ?strict_schema
-      ?reject_ambiguous input =
+      ?reject_ambiguous ?plain input =
     catch_errors ?file (fun () ->
         one_of_yaml_exn ?max_depth ?expansion_limit ?schema ?strict_schema
-          ?reject_ambiguous input)
+          ?reject_ambiguous ?plain input)
 
   let one_of_yaml_file ?max_depth ?expansion_limit ?schema ?strict_schema
-      ?reject_ambiguous path =
+      ?reject_ambiguous ?plain path =
     match
       try Ok (read_file path) with
       | Sys_error msg -> Result.Error msg
@@ -525,7 +531,7 @@ module Values = struct
     | Result.Error msg -> Result.Error ("file " ^ path ^ ": " ^ msg)
     | Ok input ->
         one_of_yaml ~file:path ?max_depth ?expansion_limit ?schema
-          ?strict_schema ?reject_ambiguous input
+          ?strict_schema ?reject_ambiguous ?plain input
 
   let to_nodes values = List.map value_to_node values
   let to_yaml values = Nodes.to_yaml (to_nodes values)

@@ -20,6 +20,7 @@ let strict = ref false
 let schema : YAMLx.schema ref = ref YAMLx.Yaml_1_2
 let strict_schema = ref false
 let reject_ambiguous = ref false
+let plain_input = ref false
 
 let set_schema s =
   match s with
@@ -95,6 +96,10 @@ let spec =
       Arg.Set reject_ambiguous,
       "  With --schema 1.2: error on plain scalars that would resolve \
        differently under YAML 1.1 (e.g. yes, 0755, <<)" );
+    ( "--plain",
+      Arg.Set plain_input,
+      "  With -f value or value-loc: error on anchors, aliases, explicit tags, \
+       or (with --schema 1.1) merge keys" );
   ]
 
 (* ------------------------------------------------------------------ *)
@@ -308,11 +313,12 @@ let () =
         (match source with
           | `Stdin ->
               YAMLx.Values.of_yaml ~schema:!schema ~strict_schema:!strict_schema
-                ~reject_ambiguous:!reject_ambiguous (read_stdin ())
+                ~reject_ambiguous:!reject_ambiguous ~plain:!plain_input
+                (read_stdin ())
           | `File path ->
               YAMLx.Values.of_yaml_file ~schema:!schema
                 ~strict_schema:!strict_schema
-                ~reject_ambiguous:!reject_ambiguous path)
+                ~reject_ambiguous:!reject_ambiguous ~plain:!plain_input path)
         |> Result.map (fun values ->
             let buf = Buffer.create 256 in
             List.iter
@@ -326,11 +332,12 @@ let () =
         (match source with
           | `Stdin ->
               YAMLx.Values.of_yaml ~schema:!schema ~strict_schema:!strict_schema
-                ~reject_ambiguous:!reject_ambiguous (read_stdin ())
+                ~reject_ambiguous:!reject_ambiguous ~plain:!plain_input
+                (read_stdin ())
           | `File path ->
               YAMLx.Values.of_yaml_file ~schema:!schema
                 ~strict_schema:!strict_schema
-                ~reject_ambiguous:!reject_ambiguous path)
+                ~reject_ambiguous:!reject_ambiguous ~plain:!plain_input path)
         |> Result.map (fun values ->
             let buf = Buffer.create 256 in
             List.iter

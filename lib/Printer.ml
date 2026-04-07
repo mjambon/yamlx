@@ -341,7 +341,7 @@ and map_pair ~level key value =
 (* ------------------------------------------------------------------ *)
 
 let plain_error fmt =
-  Printf.ksprintf (fun msg -> raise (Types.Error (Types.Plain_error msg))) fmt
+  Printf.ksprintf (fun msg -> raise (Types.Error (Types.Printer_error msg))) fmt
 
 (** Normalize a node for plain-YAML output:
     - Expand aliases (substitute the resolved node recursively).

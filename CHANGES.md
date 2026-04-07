@@ -90,6 +90,26 @@
   `?format_loc` parameter to plug in a custom location formatter (e.g.
   for LSP servers or structured logging).
 
+### Plain mode (input restriction)
+
+- New `?plain:bool` option on all `Values` functions (`of_yaml`,
+  `of_yaml_exn`, `of_yaml_file`, `of_nodes`, `of_nodes_exn`, `one_of_yaml`,
+  `one_of_yaml_file`, `one_of_yaml_exn`). When `~plain:true`, the resolver
+  raises `Simplicity_error` if it encounters any anchor (`&name`), alias
+  (`*name`), or explicit tag on any node. In YAML 1.1 mode, merge keys (`<<`)
+  also raise `Simplicity_error`. Plain YAML inputs without those features are
+  accepted unchanged.
+- New `Simplicity_error of yaml_error` error variant (carries source location).
+  Handled by `catch_errors` (renders as `"simplicity error: …"`) and
+  `register_exception_printers`.
+- Renamed `Plain_error of string` to `Printer_error of string`. This error is
+  raised by the plain-YAML printer on unsupported features (tags, complex
+  mapping keys). The old name conflicted with the new `?plain` input-mode flag.
+  `catch_errors` now renders it as `"printer error: …"`.
+- New `--plain` flag for the `yamlx` command, applicable with `-f value` and
+  `-f value-loc`. The input-side counterpart to the `-f plain` output format:
+  both reject/strip anchors, aliases, and tags.
+
 ### Duplicate key handling
 
 - The resolver now deduplicates mapping keys, keeping the last occurrence

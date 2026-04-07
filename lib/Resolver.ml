@@ -473,9 +473,69 @@ let node_loc : Types.node -> Types.loc = function
   | Mapping_node r -> r.loc
   | Alias_node r -> r.loc
 
-let rec resolve_node ~schema ~reject_ambiguous ~limit ~counter
+(** Raise [Simplicity_error] if [plain] is [true] and [node] uses an anchor, is
+    an alias, or has an explicit tag. *)
+let check_simple ~plain (node : Types.node) =
+  if plain then begin
+    (* Check anchor *)
+    (let anchor_opt =
+       match node with
+       | Scalar_node { anchor; _ } -> anchor
+       | Sequence_node { anchor; _ } -> anchor
+       | Mapping_node { anchor; _ } -> anchor
+       | Alias_node _ -> None
+     in
+     match anchor_opt with
+     | Some name ->
+         let loc = node_loc node in
+         raise
+           (Types.Error
+              (Types.Simplicity_error
+                 {
+                   msg =
+                     Printf.sprintf "anchor '&%s' is not allowed in plain mode"
+                       name;
+                   loc;
+                 }))
+     | None -> ());
+    (* Check alias *)
+    (match node with
+    | Alias_node { name; loc; _ } ->
+        raise
+          (Types.Error
+             (Types.Simplicity_error
+                {
+                  msg =
+                    Printf.sprintf "alias '*%s' is not allowed in plain mode"
+                      name;
+                  loc;
+                }))
+    | _ -> ());
+    (* Check explicit tag *)
+    let tag_opt =
+      match node with
+      | Scalar_node { tag; _ } -> tag
+      | Sequence_node { tag; _ } -> tag
+      | Mapping_node { tag; _ } -> tag
+      | Alias_node _ -> None
+    in
+    match tag_opt with
+    | Some t ->
+        let loc = node_loc node in
+        raise
+          (Types.Error
+             (Types.Simplicity_error
+                {
+                  msg = Printf.sprintf "tag '%s' is not allowed in plain mode" t;
+                  loc;
+                }))
+    | None -> ()
+  end
+
+let rec resolve_node ~schema ~reject_ambiguous ~plain ~limit ~counter
     (node : Types.node) : Types.value =
   tick ~limit ~counter;
+  check_simple ~plain node;
   match node with
   | Scalar_node { tag; value; style; loc; _ } ->
       resolve_scalar ~schema ~reject_ambiguous ~loc ~explicit_tag:tag ~style
@@ -484,10 +544,12 @@ let rec resolve_node ~schema ~reject_ambiguous ~limit ~counter
       Seq
         ( loc,
           List_ext.map
-            (resolve_node ~schema ~reject_ambiguous ~limit ~counter)
+            (resolve_node ~schema ~reject_ambiguous ~plain ~limit ~counter)
             items )
   | Mapping_node { pairs; loc; _ } -> (
-      let resolve = resolve_node ~schema ~reject_ambiguous ~limit ~counter in
+      let resolve =
+        resolve_node ~schema ~reject_ambiguous ~plain ~limit ~counter
+      in
       match schema with
       | Yaml_1_2 ->
           (* In 1.2 mode, check for merge keys when reject_ambiguous is set *)
@@ -534,6 +596,18 @@ let rec resolve_node ~schema ~reject_ambiguous ~limit ~counter
               (fun (k, v) -> if is_merge_key_node k then Some v else None)
               pairs
           in
+          (* In plain mode, merge keys are not allowed *)
+          (if plain && merge_nodes <> [] then
+             let merge_k =
+               fst (List.find (fun (k, _) -> is_merge_key_node k) pairs)
+             in
+             raise
+               (Types.Error
+                  (Types.Simplicity_error
+                     {
+                       msg = "merge key '<<' is not allowed in plain mode";
+                       loc = node_loc merge_k;
+                     })));
           (* Resolve regular pairs *)
           let reg_resolved =
             List_ext.map
@@ -569,12 +643,12 @@ let rec resolve_node ~schema ~reject_ambiguous ~limit ~counter
           in
           Map (loc, reg_resolved @ extra))
   | Alias_node { resolved; _ } ->
-      resolve_node ~schema ~reject_ambiguous ~limit ~counter resolved
+      resolve_node ~schema ~reject_ambiguous ~plain ~limit ~counter resolved
 
 let resolve_documents ?(expansion_limit = Types.default_expansion_limit)
     ?(schema = Yaml_1_2) ?(strict_schema = false) ?(reject_ambiguous = false)
-    (versioned_nodes : ((int * int) option * Types.node) list) :
-    Types.value list =
+    ?(plain = false) (versioned_nodes : ((int * int) option * Types.node) list)
+    : Types.value list =
   let counter = ref 0 in
   List_ext.map
     (fun (doc_version, node) ->
@@ -582,6 +656,6 @@ let resolve_documents ?(expansion_limit = Types.default_expansion_limit)
         effective_schema ~strict_schema ~requested:schema ~loc:(node_loc node)
           doc_version
       in
-      resolve_node ~schema:eff_schema ~reject_ambiguous ~limit:expansion_limit
-        ~counter node)
+      resolve_node ~schema:eff_schema ~reject_ambiguous ~plain
+        ~limit:expansion_limit ~counter node)
     versioned_nodes
