@@ -21,6 +21,7 @@ let schema : YAMLx.schema ref = ref YAMLx.Yaml_1_2
 let strict_schema = ref false
 let reject_ambiguous = ref false
 let plain_input = ref false
+let strict_keys = ref false
 
 let set_schema s =
   match s with
@@ -100,6 +101,10 @@ let spec =
       Arg.Set plain_input,
       "  With -f value or value-loc: error on anchors, aliases, explicit tags, \
        or (with --schema 1.1) merge keys" );
+    ( "--strict-keys",
+      Arg.Set strict_keys,
+      "  With -f value or value-loc: error on duplicate mapping keys instead \
+       of silently keeping the last occurrence" );
   ]
 
 (* ------------------------------------------------------------------ *)
@@ -314,11 +319,12 @@ let () =
           | `Stdin ->
               YAMLx.Values.of_yaml ~schema:!schema ~strict_schema:!strict_schema
                 ~reject_ambiguous:!reject_ambiguous ~plain:!plain_input
-                (read_stdin ())
+                ~strict_keys:!strict_keys (read_stdin ())
           | `File path ->
               YAMLx.Values.of_yaml_file ~schema:!schema
                 ~strict_schema:!strict_schema
-                ~reject_ambiguous:!reject_ambiguous ~plain:!plain_input path)
+                ~reject_ambiguous:!reject_ambiguous ~plain:!plain_input
+                ~strict_keys:!strict_keys path)
         |> Result.map (fun values ->
             let buf = Buffer.create 256 in
             List.iter
@@ -333,11 +339,12 @@ let () =
           | `Stdin ->
               YAMLx.Values.of_yaml ~schema:!schema ~strict_schema:!strict_schema
                 ~reject_ambiguous:!reject_ambiguous ~plain:!plain_input
-                (read_stdin ())
+                ~strict_keys:!strict_keys (read_stdin ())
           | `File path ->
               YAMLx.Values.of_yaml_file ~schema:!schema
                 ~strict_schema:!strict_schema
-                ~reject_ambiguous:!reject_ambiguous ~plain:!plain_input path)
+                ~reject_ambiguous:!reject_ambiguous ~plain:!plain_input
+                ~strict_keys:!strict_keys path)
         |> Result.map (fun values ->
             let buf = Buffer.create 256 in
             List.iter

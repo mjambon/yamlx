@@ -21,6 +21,7 @@ val resolve_documents :
   ?strict_schema:bool ->
   ?reject_ambiguous:bool ->
   ?plain:bool ->
+  ?strict_keys:bool ->
   ((int * int) option * Types.node) list ->
   Types.value list
 (** Resolve a list of [(version, node)] pairs into typed values.
@@ -43,4 +44,8 @@ val resolve_documents :
 
     [plain] raises {!Types.Simplicity_error} if any anchor, alias, or explicit
     tag is encountered, or (in YAML 1.1 mode) if a merge key ([<<]) is
-    encountered (default: [false]). *)
+    encountered (default: [false]).
+
+    [strict_keys] raises {!Types.Duplicate_key_error} when a mapping contains
+    the same key more than once. Without this flag the last occurrence wins
+    (default: [false]). *)

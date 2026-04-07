@@ -54,8 +54,12 @@ type error =
   | Document_count_error of string
   | Schema_error of yaml_error
   | Simplicity_error of yaml_error
-      (** A YAML feature not allowed in simple mode was encountered: an anchor,
+      (** A YAML feature not allowed in plain mode was encountered: an anchor,
           alias, explicit tag, or (in YAML 1.1 mode) a merge key ([<<]). *)
+  | Duplicate_key_error of yaml_error
+      (** A mapping contains a duplicate key. Raised when [~strict_keys:true] is
+          passed to resolver functions. The location points to the second
+          (duplicate) occurrence. *)
 
 exception Error of error
 
@@ -214,4 +218,11 @@ type value =
   | Map of loc * (loc * value * value) list
 
 val equal_value : value -> value -> bool
-(** Compare two values, ignoring locations *)
+(** Structural equality that ignores source locations. *)
+
+val compare_value : value -> value -> int
+(** Total order on values that ignores source locations. Constructor order: Null
+    < Bool < Int < Float < String < Seq < Map. *)
+
+module Value_set : Set.S with type elt = value
+(** Sets of values, ordered by [compare_value]. *)

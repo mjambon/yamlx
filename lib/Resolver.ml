@@ -420,43 +420,44 @@ let expand_merge_value = function
 (* Key deduplication                                                     *)
 (* ------------------------------------------------------------------ *)
 
-(** A hashtable suitable for looking up simple keys in O(1) time and complex
-    keys in O(n) time. *)
-module Value_hashtbl = Hashtbl.Make (struct
-  type t = value
-
-  let equal = Types.equal_value
-
-  (** A hash function that works well for simple values and terribly for
-      sequences and maps. *)
-  let hash = function
-    | Null _ -> 7
-    | Bool (_, x) -> Hashtbl.hash x
-    | Int (_, x) -> Hashtbl.hash x
-    | Float (_, x) -> Hashtbl.hash x
-    | String (_, x) -> Hashtbl.hash x
-    | Seq (_, _xs) -> 8
-    | Map (_, _ps) -> 9
-end)
-
 (** Keep only the last occurrence of each key in a resolved pair list,
-    preserving the relative order of surviving entries.
+    preserving the relative order of surviving entries. Returns the surviving
+    pairs together with the set of their keys.
 
     Implemented by reversing, keeping the first occurrence of each key (= last
     in the original), then reversing back. *)
 let dedup_keep_last pairs =
   let rev = List.rev pairs in
-  let seen = Value_hashtbl.create 10 in
+  let seen = ref Types.Value_set.empty in
   let deduped =
     List.filter
       (fun (_, k, _) ->
-        if Value_hashtbl.mem seen k then false
+        if Types.Value_set.mem k !seen then false
         else (
-          Value_hashtbl.add seen k ();
+          seen := Types.Value_set.add k !seen;
           true))
       rev
   in
-  List.rev deduped
+  (List.rev deduped, !seen)
+
+(** Raise [Duplicate_key_error] if any key appears more than once. The error
+    location points to the second (duplicate) key-value pair. Returns the set of
+    keys on success. *)
+let check_unique_keys pairs =
+  List.fold_left
+    (fun seen (pair_loc, k, _) ->
+      if Types.Value_set.mem k seen then
+        raise
+          (Types.Error
+             (Types.Duplicate_key_error
+                { msg = "duplicate mapping key"; loc = pair_loc }))
+      else Types.Value_set.add k seen)
+    Types.Value_set.empty pairs
+
+(** Filter [pairs] to those whose key is not already in [known_keys]. Used to
+    suppress merged keys that duplicate an explicit regular key. *)
+let keep_new_keys known_keys pairs =
+  List.filter (fun (_, k, _) -> not (Types.Value_set.mem k known_keys)) pairs
 
 (* ------------------------------------------------------------------ *)
 (* Full node resolution                                                  *)
@@ -532,8 +533,8 @@ let check_simple ~plain (node : Types.node) =
     | None -> ()
   end
 
-let rec resolve_node ~schema ~reject_ambiguous ~plain ~limit ~counter
-    (node : Types.node) : Types.value =
+let rec resolve_node ~schema ~reject_ambiguous ~plain ~strict_keys ~limit
+    ~counter (node : Types.node) : Types.value =
   tick ~limit ~counter;
   check_simple ~plain node;
   match node with
@@ -544,11 +545,13 @@ let rec resolve_node ~schema ~reject_ambiguous ~plain ~limit ~counter
       Seq
         ( loc,
           List_ext.map
-            (resolve_node ~schema ~reject_ambiguous ~plain ~limit ~counter)
+            (resolve_node ~schema ~reject_ambiguous ~plain ~strict_keys ~limit
+               ~counter)
             items )
   | Mapping_node { pairs; loc; _ } -> (
       let resolve =
-        resolve_node ~schema ~reject_ambiguous ~plain ~limit ~counter
+        resolve_node ~schema ~reject_ambiguous ~plain ~strict_keys ~limit
+          ~counter
       in
       match schema with
       | Yaml_1_2 ->
@@ -585,7 +588,12 @@ let rec resolve_node ~schema ~reject_ambiguous ~plain ~limit ~counter
                 else (pair_loc, k', resolve v))
               pairs
           in
-          Map (loc, dedup_keep_last pairs_resolved)
+          let pairs_final, _ =
+            if strict_keys then
+              (pairs_resolved, check_unique_keys pairs_resolved)
+            else dedup_keep_last pairs_resolved
+          in
+          Map (loc, pairs_final)
       | Yaml_1_1 ->
           (* Separate merge-key pairs from regular pairs *)
           let regular =
@@ -627,28 +635,23 @@ let rec resolve_node ~schema ~reject_ambiguous ~plain ~limit ~counter
               (fun mv -> expand_merge_value (resolve mv))
               merge_nodes
           in
-          (* Deduplicate regular pairs (last occurrence wins) *)
-          let reg_resolved = dedup_keep_last reg_resolved in
-          (* Deduplicate: regular keys win; among merged, earlier wins *)
-          let defined = List.map (fun (_, k, _) -> k) reg_resolved in
-          let seen = ref defined in
-          let extra =
-            List.filter
-              (fun (_, k, _) ->
-                if List.exists (Types.equal_value k) !seen then false
-                else (
-                  seen := k :: !seen;
-                  true))
-              merge_expanded
+          (* Check/deduplicate regular pairs; keep merged keys not already
+             present among the regular keys *)
+          let reg_final, reg_keys =
+            if strict_keys then (reg_resolved, check_unique_keys reg_resolved)
+            else dedup_keep_last reg_resolved
           in
-          Map (loc, reg_resolved @ extra))
+          let extra = keep_new_keys reg_keys merge_expanded in
+          Map (loc, reg_final @ extra))
   | Alias_node { resolved; _ } ->
-      resolve_node ~schema ~reject_ambiguous ~plain ~limit ~counter resolved
+      resolve_node ~schema ~reject_ambiguous ~plain ~strict_keys ~limit ~counter
+        resolved
 
 let resolve_documents ?(expansion_limit = Types.default_expansion_limit)
     ?(schema = Yaml_1_2) ?(strict_schema = false) ?(reject_ambiguous = false)
-    ?(plain = false) (versioned_nodes : ((int * int) option * Types.node) list)
-    : Types.value list =
+    ?(plain = false) ?(strict_keys = false)
+    (versioned_nodes : ((int * int) option * Types.node) list) :
+    Types.value list =
   let counter = ref 0 in
   List_ext.map
     (fun (doc_version, node) ->
@@ -656,6 +659,6 @@ let resolve_documents ?(expansion_limit = Types.default_expansion_limit)
         effective_schema ~strict_schema ~requested:schema ~loc:(node_loc node)
           doc_version
       in
-      resolve_node ~schema:eff_schema ~reject_ambiguous ~plain
+      resolve_node ~schema:eff_schema ~reject_ambiguous ~plain ~strict_keys
         ~limit:expansion_limit ~counter node)
     versioned_nodes
