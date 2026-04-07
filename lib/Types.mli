@@ -218,4 +218,11 @@ type value =
   | Map of loc * (loc * value * value) list
 
 val equal_value : value -> value -> bool
-(** Compare two values, ignoring locations *)
+(** Structural equality that ignores source locations. *)
+
+val compare_value : value -> value -> int
+(** Total order on values that ignores source locations. Constructor order: Null
+    < Bool < Int < Float < String < Seq < Map. *)
+
+module Value_set : Set.S with type elt = value
+(** Sets of values, ordered by [compare_value]. *)

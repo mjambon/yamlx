@@ -264,3 +264,38 @@ let rec equal_value a b =
         (fun (_, k1, v1) (_, k2, v2) -> equal_value k1 k2 && equal_value v1 v2)
         ps qs
   | _ -> false
+
+(** Total order on values that ignores source locations. Constructor order: Null
+    < Bool < Int < Float < String < Seq < Map. *)
+let rec compare_value a b =
+  match (a, b) with
+  | Null _, Null _ -> 0
+  | Null _, _ -> -1
+  | _, Null _ -> 1
+  | Bool (_, x), Bool (_, y) -> Bool.compare x y
+  | Bool _, _ -> -1
+  | _, Bool _ -> 1
+  | Int (_, x), Int (_, y) -> Int64.compare x y
+  | Int _, _ -> -1
+  | _, Int _ -> 1
+  | Float (_, x), Float (_, y) -> Float.compare x y
+  | Float _, _ -> -1
+  | _, Float _ -> 1
+  | String (_, x), String (_, y) -> String.compare x y
+  | String _, _ -> -1
+  | _, String _ -> 1
+  | Seq (_, xs), Seq (_, ys) -> List.compare compare_value xs ys
+  | Seq _, _ -> -1
+  | _, Seq _ -> 1
+  | Map (_, ps), Map (_, qs) ->
+      List.compare
+        (fun (_, k1, v1) (_, k2, v2) ->
+          let c = compare_value k1 k2 in
+          if c <> 0 then c else compare_value v1 v2)
+        ps qs
+
+module Value_set = Set.Make (struct
+  type t = value
+
+  let compare = compare_value
+end)
