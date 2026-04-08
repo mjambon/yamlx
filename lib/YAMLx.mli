@@ -177,9 +177,10 @@ val default_expansion_limit : int
 val default_max_depth : int
 (** Default maximum nesting depth (512). *)
 
-val string_of_error : yaml_error -> string
-(** Format a {!yaml_error} using {!default_format_loc} followed by
-    [": message"]. Equivalent to [default_format_loc e.loc ^ ": " ^ e.msg]. *)
+val show_yaml_error :
+  ?format_loc:(?file:string -> loc -> string) -> yaml_error -> string
+(** Format a {!yaml_error} as ["location: message"]. Uses {!default_format_loc}
+    by default; pass [~format_loc] to customise location formatting. *)
 
 (** {1 Scalar styles} *)
 
@@ -321,8 +322,8 @@ module Nodes : sig
       are preserved. The output round-trips through {!of_yaml_exn} to equivalent
       nodes. Does not raise. *)
 
-  val to_yaml_file : t -> string -> unit
-  (** [to_yaml_file nodes path] serializes nodes to YAML (via {!to_yaml}) and
+  val to_yaml_file : string -> t -> unit
+  (** [to_yaml_file path nodes] serializes nodes to YAML (via {!to_yaml}) and
       writes the result to [path], overwriting any existing file. Raises
       [Sys_error] on file I/O failure. *)
 
@@ -338,8 +339,8 @@ module Nodes : sig
       exceeds [expansion_limit] (default: {!default_expansion_limit}). *)
 
   val to_plain_yaml_file :
-    ?strict:bool -> ?expansion_limit:int -> t -> string -> (unit, string) result
-  (** [to_plain_yaml_file nodes path] serializes nodes to plain YAML (via
+    ?strict:bool -> ?expansion_limit:int -> string -> t -> (unit, string) result
+  (** [to_plain_yaml_file path nodes] serializes nodes to plain YAML (via
       {!to_plain_yaml_exn}) and writes the result to [path], overwriting any
       existing file. Returns [Error msg] on serialization failure (same errors
       as {!to_plain_yaml_exn}). Raises [Sys_error] on file I/O failure. *)
@@ -520,8 +521,8 @@ module Values : sig
   (** Serialize typed values to a YAML string. Equivalent to
       [Nodes.to_yaml (to_nodes values)]. Does not raise. *)
 
-  val to_yaml_file : t -> string -> unit
-  (** [to_yaml_file values path] serializes values to YAML (via {!to_yaml}) and
+  val to_yaml_file : string -> t -> unit
+  (** [to_yaml_file path values] serializes values to YAML (via {!to_yaml}) and
       writes the result to [path], overwriting any existing file. Raises
       [Sys_error] on file I/O failure. *)
 end
