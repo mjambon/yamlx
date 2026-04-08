@@ -45,6 +45,7 @@ let main () =
   try run test_yaml_roundtrip with
   | e ->
       eprintf "Uncaught exception: %s\n" (Printexc.to_string e);
-      Printexc.print_backtrace stderr
+      Printexc.print_backtrace stderr;
+      exit 1
 
 let () = main ()
