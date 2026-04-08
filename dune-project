@@ -23,7 +23,7 @@
   ocaml
   ppx_deriving
   (testo :with-test)
-  (afl-persistent :with-dev)
+  (afl-persistent :dev)
  )
  (tags
   (yaml parser serialization)

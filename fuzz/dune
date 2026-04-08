@@ -1,5 +1,6 @@
 (executable
  (name fuzz)
+ (optional)
  (libraries
    afl-persistent
    yamlx
