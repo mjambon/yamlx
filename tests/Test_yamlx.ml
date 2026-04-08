@@ -366,6 +366,20 @@ let comment_tests () =
         let out = YAMLx.Nodes.to_yaml (YAMLx.Nodes.of_yaml_exn "[a, b]\n") in
         if String.contains out '#' then
           failwith (Printf.sprintf "unexpected '#' in output: %S" out));
+    Testo.create ~category:[ "comments" ]
+      "double-hash head comment preserved verbatim"
+      (* '## hello' must not become '# # hello' *)
+      (check "## hello\na\n" "## hello\na\n");
+    Testo.create ~category:[ "comments" ]
+      "comment with no space after hash preserved verbatim"
+      (* '#hello' (no space) must not become '# hello' *)
+      (check "#hello\na\n" "#hello\na\n");
+    Testo.create ~category:[ "comments" ]
+      "double-hash inline comment preserved verbatim"
+      (check "a: x  ## note\n" "a: x  ## note\n");
+    Testo.create ~category:[ "comments" ]
+      "inline comment with no space after hash preserved verbatim"
+      (check "a: x  #note\n" "a: x  #note\n");
   ]
 
 (* ------------------------------------------------------------------ *)
