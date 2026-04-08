@@ -31,7 +31,7 @@ open Types
 let string_forall_from start f s =
   let n = String.length s in
   let i = ref start in
-  while !i < n && f (String.unsafe_get s !i) do
+  while !i < n && f s.[!i] do
     incr i
   done;
   !i = n

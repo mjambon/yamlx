@@ -27,7 +27,7 @@ let decode_utf8 (s : string) : int array =
   let pos () = { Types.zero_pos with offset_bytes = !i } in
   let first = ref true in
   while !i < n do
-    let b0 = Char.code (String.unsafe_get s !i) in
+    let b0 = Char.code s.[!i] in
     let cp, width =
       if b0 land 0x80 = 0 then
         (* 0xxxxxxx – 1-byte (ASCII) *)
@@ -37,7 +37,7 @@ let decode_utf8 (s : string) : int array =
         if !i + 1 >= n then
           Types.scan_error (pos ()) "truncated UTF-8 sequence at byte offset %d"
             !i;
-        let b1 = Char.code (String.unsafe_get s (!i + 1)) in
+        let b1 = Char.code s.[!i + 1] in
         (((b0 land 0x1F) lsl 6) lor (b1 land 0x3F), 2)
       end
       else if b0 land 0xF0 = 0xE0 then begin
@@ -45,8 +45,8 @@ let decode_utf8 (s : string) : int array =
         if !i + 2 >= n then
           Types.scan_error (pos ()) "truncated UTF-8 sequence at byte offset %d"
             !i;
-        let b1 = Char.code (String.unsafe_get s (!i + 1)) in
-        let b2 = Char.code (String.unsafe_get s (!i + 2)) in
+        let b1 = Char.code s.[!i + 1] in
+        let b2 = Char.code s.[!i + 2] in
         ( ((b0 land 0x0F) lsl 12) lor ((b1 land 0x3F) lsl 6) lor (b2 land 0x3F),
           3 )
       end
@@ -55,9 +55,9 @@ let decode_utf8 (s : string) : int array =
         if !i + 3 >= n then
           Types.scan_error (pos ()) "truncated UTF-8 sequence at byte offset %d"
             !i;
-        let b1 = Char.code (String.unsafe_get s (!i + 1)) in
-        let b2 = Char.code (String.unsafe_get s (!i + 2)) in
-        let b3 = Char.code (String.unsafe_get s (!i + 3)) in
+        let b1 = Char.code s.[!i + 1] in
+        let b2 = Char.code s.[!i + 2] in
+        let b3 = Char.code s.[!i + 3] in
         ( ((b0 land 0x07) lsl 18)
           lor ((b1 land 0x3F) lsl 12)
           lor ((b2 land 0x3F) lsl 6)
@@ -77,14 +77,13 @@ let decode_utf8 (s : string) : int array =
       let norm =
         if cp = 0x0D then begin
           (* CR: consume a following LF if present (LF is ASCII, always 1 byte) *)
-          if !i < n && Char.code (String.unsafe_get s !i) = 0x0A then
-            i := !i + 1;
+          if !i < n && Char.code s.[!i] = 0x0A then i := !i + 1;
           0x0A
         end
         else if cp = 0x85 || cp = 0x2028 || cp = 0x2029 then 0x0A
         else cp
       in
-      Array.unsafe_set buf !j norm;
+      buf.(!j) <- norm;
       incr j
     end
   done;
@@ -175,14 +174,14 @@ let pos (r : t) : pos =
     [eof] past the end of input. *)
 let peek (r : t) (ahead : int) : int =
   let i = r.idx + ahead in
-  if i >= Array.length r.buf then eof else Array.unsafe_get r.buf i
+  if i >= Array.length r.buf then eof else r.buf.(i)
 
 (** Advance by [n] codepoints, updating all position fields. *)
 let advance (r : t) (n : int) : unit =
   let limit = Array.length r.buf in
   for _ = 1 to n do
     if r.idx < limit then begin
-      let cp = Array.unsafe_get r.buf r.idx in
+      let cp = r.buf.(r.idx) in
       let blen = utf8_length cp in
       r.idx <- r.idx + 1;
       r.byte_idx <- r.byte_idx + blen;
@@ -211,7 +210,7 @@ let peek_string (r : t) (n : int) : string =
   let limit = min (r.idx + n) (Array.length r.buf) in
   let i = ref r.idx in
   while !i < limit do
-    encode_utf8 buf (Array.unsafe_get r.buf !i);
+    encode_utf8 buf r.buf.(!i);
     incr i
   done;
   Buffer.contents buf
@@ -229,8 +228,8 @@ let prefix_is (r : t) (s : string) : bool =
   let ok = ref (r.idx + n <= limit) in
   let i = ref 0 in
   while !ok && !i < n do
-    let cp = Array.unsafe_get r.buf (r.idx + !i) in
-    if cp <> Char.code (String.unsafe_get s !i) then ok := false;
+    let cp = r.buf.(r.idx + !i) in
+    if cp <> Char.code s.[!i] then ok := false;
     incr i
   done;
   !ok
