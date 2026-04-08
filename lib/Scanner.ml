@@ -1234,9 +1234,16 @@ let scan_dq_escape scn =
       Buffer.contents b
   | 0x78 ->
       (* \xXX *)
-      let hi = Char_class.hex_value (peek scn 0) in
-      let lo = Char_class.hex_value (peek scn 1) in
-      advance scn 2;
+      let read_hex scn =
+        let c = peek scn 0 in
+        if not (Char_class.is_hex_digit c) then
+          Types.scan_error (pos scn)
+            "expected hex digit in escape sequence, got %s" (Char_class.show c);
+        advance scn 1;
+        Char_class.hex_value c
+      in
+      let hi = read_hex scn in
+      let lo = read_hex scn in
       let b = Buffer.create 2 in
       Reader.encode_utf8_to b ((hi lsl 4) lor lo);
       Buffer.contents b
@@ -1244,7 +1251,11 @@ let scan_dq_escape scn =
       (* \uXXXX *)
       let cp = ref 0 in
       for _ = 0 to 3 do
-        cp := (!cp lsl 4) lor Char_class.hex_value (peek scn 0);
+        let c = peek scn 0 in
+        if not (Char_class.is_hex_digit c) then
+          Types.scan_error (pos scn)
+            "expected hex digit in \\uXXXX escape, got %s" (Char_class.show c);
+        cp := (!cp lsl 4) lor Char_class.hex_value c;
         advance scn 1
       done;
       let b = Buffer.create 4 in
@@ -1254,9 +1265,17 @@ let scan_dq_escape scn =
       (* \UXXXXXXXX *)
       let cp = ref 0 in
       for _ = 0 to 7 do
-        cp := (!cp lsl 4) lor Char_class.hex_value (peek scn 0);
+        let c = peek scn 0 in
+        if not (Char_class.is_hex_digit c) then
+          Types.scan_error (pos scn)
+            "expected hex digit in \\UXXXXXXXX escape, got %s"
+            (Char_class.show c);
+        cp := (!cp lsl 4) lor Char_class.hex_value c;
         advance scn 1
       done;
+      if !cp > 0x10FFFF then
+        Types.scan_error (pos scn)
+          "Unicode escape \\U%08X is out of range (max U+10FFFF)" !cp;
       let b = Buffer.create 4 in
       Reader.encode_utf8_to b !cp;
       Buffer.contents b
