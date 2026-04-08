@@ -200,6 +200,25 @@ let encoding_tests () =
       "PS (U+2029) line endings normalized to LF"
       (* PS encoded as UTF-8: E2 80 A9 *)
       (check_line_ending "a: 1\xE2\x80\xA9b: 2\xE2\x80\xA9");
+    (* Invalid UTF-8: must raise Scan_error, not Failure *)
+    Testo.create ~category:[ "encoding" ] "invalid UTF-8 byte raises Scan_error"
+      (fun () ->
+        (* 0xB6 is not a valid UTF-8 lead byte *)
+        match YAMLx.Nodes.of_yaml_exn "hello: \xB6" with
+        | exception YAMLx.Error (YAMLx.Scan_error _) -> ()
+        | _ -> failwith "expected Scan_error for invalid UTF-8 byte");
+    Testo.create ~category:[ "encoding" ]
+      "truncated 2-byte UTF-8 sequence raises Scan_error" (fun () ->
+        (* 0xC2 starts a 2-byte sequence but nothing follows *)
+        match YAMLx.Nodes.of_yaml_exn "hello: \xC2" with
+        | exception YAMLx.Error (YAMLx.Scan_error _) -> ()
+        | _ -> failwith "expected Scan_error for truncated UTF-8 sequence");
+    Testo.create ~category:[ "encoding" ]
+      "truncated 4-byte UTF-8 sequence raises Scan_error" (fun () ->
+        (* 0xF0 starts a 4-byte sequence but only one continuation byte follows *)
+        match YAMLx.Nodes.of_yaml_exn "hello: \xF0\x9F" with
+        | exception YAMLx.Error (YAMLx.Scan_error _) -> ()
+        | _ -> failwith "expected Scan_error for truncated UTF-8 sequence");
   ]
 
 (* ------------------------------------------------------------------ *)
