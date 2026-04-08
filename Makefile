@@ -11,11 +11,9 @@ test:
 
 # Generate random YAML input and try parsing it and printing it until
 # something bad happens.
-#
-# See --help for options.
 .PHONY: fuzz
 fuzz:
-	dune exec -- fuzz/fuzz.exe
+	$(MAKE) -C fuzz fuzz
 
 # Create a local opam switch (= install deps only for this project)
 .PHONY: setup-opam

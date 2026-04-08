@@ -18,6 +18,7 @@ depends: [
   "ocaml"
   "ppx_deriving"
   "testo" {with-test}
+  "afl-persistent" {with-dev}
   "odoc" {with-doc}
 ]
 build: [

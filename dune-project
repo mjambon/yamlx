@@ -22,8 +22,12 @@
  (depends
   ocaml
   ppx_deriving
-  (testo :with-test))
+  (testo :with-test)
+  (afl-persistent :with-dev)
+ )
  (tags
-  (yaml parser serialization)))
+  (yaml parser serialization)
+ )
+)
 
 ; See the complete stanza docs at https://dune.readthedocs.io/en/stable/reference/dune-project/index.html

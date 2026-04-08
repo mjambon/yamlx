@@ -1,7 +1,7 @@
 (executable
  (name fuzz)
  (libraries
-   crowbar
+   afl-persistent
    yamlx
  )
 )
