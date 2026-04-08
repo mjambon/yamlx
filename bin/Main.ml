@@ -9,6 +9,8 @@
 
     --strict (plain only): error on tags instead of stripping them *)
 
+open Printf
+
 (* ------------------------------------------------------------------ *)
 (* Output format                                                         *)
 (* ------------------------------------------------------------------ *)
@@ -257,7 +259,7 @@ let or_die = function
       Printf.eprintf "%s\n" msg;
       exit 1
 
-let () =
+let run () =
   let files = ref [] in
   Arg.parse spec (fun s -> files := s :: !files) usage_msg;
   let source =
@@ -376,3 +378,12 @@ let () =
         |> or_die
   in
   print_string output
+
+let main () =
+  Printexc.record_backtrace true;
+  try run () with
+  | e ->
+      eprintf "Uncaught exception: %s\n" (Printexc.to_string e);
+      Printexc.print_backtrace stderr
+
+let () = main ()

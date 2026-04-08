@@ -178,28 +178,30 @@ let parse_sexagesimal_float s =
   | [ _ ] ->
       None
   | _ -> (
-      let n = List.length parts in
-      let int_parts = List.filteri (fun i _ -> i < n - 1) parts in
-      let last = List.nth parts (n - 1) in
-      (* Last component must contain a '.' to be a float, not a sexagesimal int *)
-      if not (String.contains last '.') then None
-      else
-        try
-          let int_ns = List.map int_of_string int_parts in
-          let last_f = float_of_string last in
-          match int_ns with
-          | [] -> None
-          | first :: _ ->
-              if first < 1 then None
-              else if List.exists (fun n -> n < 0 || n > 59) (List.tl int_ns)
-              then None
-              else
-                let int_val =
-                  List.fold_left (fun acc n -> (acc * 60) + n) 0 int_ns
-                in
-                Some (sign *. ((float_of_int int_val *. 60.0) +. last_f))
-        with
-        | _ -> None)
+      match List.rev parts with
+      | []
+      | [ _ ] ->
+          None (* unreachable: handled above *)
+      | last :: rev_int_parts -> (
+          let int_parts = List.rev rev_int_parts in
+          (* Last component must contain a '.' to be a float, not a sexagesimal int *)
+          if not (String.contains last '.') then None
+          else
+            try
+              let int_ns = List.map int_of_string int_parts in
+              let last_f = float_of_string last in
+              match int_ns with
+              | [] -> None
+              | first :: rest ->
+                  if first < 1 then None
+                  else if List.exists (fun n -> n < 0 || n > 59) rest then None
+                  else
+                    let int_val =
+                      List.fold_left (fun acc n -> (acc * 60) + n) 0 int_ns
+                    in
+                    Some (sign *. ((float_of_int int_val *. 60.0) +. last_f))
+            with
+            | _ -> None))
 
 (* ------------------------------------------------------------------ *)
 (* Ambiguity detection (reject_ambiguous mode)                          *)
@@ -607,17 +609,16 @@ let rec resolve_node ~schema ~reject_ambiguous ~plain ~strict_keys ~limit
                 pairs
             in
             (* In plain mode, merge keys are not allowed *)
-            (if plain && merge_nodes <> [] then
-               let merge_k =
-                 fst (List.find (fun (k, _) -> is_merge_key_node k) pairs)
-               in
-               raise
-                 (Types.Error
-                    (Types.Simplicity_error
-                       {
-                         msg = "merge key '<<' is not allowed in plain mode";
-                         loc = node_loc merge_k;
-                       })));
+            (match List.find_opt (fun (k, _) -> is_merge_key_node k) pairs with
+            | Some (merge_k, _) when plain ->
+                raise
+                  (Types.Error
+                     (Types.Simplicity_error
+                        {
+                          msg = "merge key '<<' is not allowed in plain mode";
+                          loc = node_loc merge_k;
+                        }))
+            | _ -> ());
             (* Resolve regular pairs *)
             let reg_resolved =
               List_ext.map
@@ -656,7 +657,9 @@ let rec resolve_node ~schema ~reject_ambiguous ~plain ~strict_keys ~limit
           resolve_node ~schema ~reject_ambiguous ~plain ~strict_keys ~limit
             ~counter ~visiting target
   in
-  visiting := List.tl !visiting;
+  (match !visiting with
+  | _ :: rest -> visiting := rest
+  | [] -> ());
   result
 
 let resolve_documents ?(expansion_limit = Types.default_expansion_limit)

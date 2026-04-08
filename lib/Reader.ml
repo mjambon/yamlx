@@ -14,14 +14,16 @@ let eof = Char_class.eof
 (* UTF-8 decoding                                                       *)
 (* ------------------------------------------------------------------ *)
 
-(** Decode a UTF-8 string to an array of Unicode codepoints. Raises [Failure] if
-    the input contains invalid UTF-8 byte sequences. *)
+(** Decode a UTF-8 string to an array of Unicode codepoints. Raises
+    [Types.Error (Types.Scan_error _)] if the input contains invalid UTF-8 byte
+    sequences. *)
 let decode_utf8 (s : string) : int array =
   let n = String.length s in
   (* Upper bound: one codepoint per byte in the ASCII case *)
   let buf = Array.make n 0 in
   let j = ref 0 in
   let i = ref 0 in
+  let pos () = { Types.zero_pos with offset_bytes = !i } in
   while !i < n do
     let b0 = Char.code (String.unsafe_get s !i) in
     let cp, width =
@@ -30,13 +32,17 @@ let decode_utf8 (s : string) : int array =
         (b0, 1)
       else if b0 land 0xE0 = 0xC0 then begin
         (* 110xxxxx 10xxxxxx – 2-byte *)
-        if !i + 1 >= n then failwith "Reader.decode_utf8: truncated sequence";
+        if !i + 1 >= n then
+          Types.scan_error (pos ()) "truncated UTF-8 sequence at byte offset %d"
+            !i;
         let b1 = Char.code (String.unsafe_get s (!i + 1)) in
         (((b0 land 0x1F) lsl 6) lor (b1 land 0x3F), 2)
       end
       else if b0 land 0xF0 = 0xE0 then begin
         (* 1110xxxx 10xxxxxx 10xxxxxx – 3-byte *)
-        if !i + 2 >= n then failwith "Reader.decode_utf8: truncated sequence";
+        if !i + 2 >= n then
+          Types.scan_error (pos ()) "truncated UTF-8 sequence at byte offset %d"
+            !i;
         let b1 = Char.code (String.unsafe_get s (!i + 1)) in
         let b2 = Char.code (String.unsafe_get s (!i + 2)) in
         ( ((b0 land 0x0F) lsl 12) lor ((b1 land 0x3F) lsl 6) lor (b2 land 0x3F),
@@ -44,7 +50,9 @@ let decode_utf8 (s : string) : int array =
       end
       else if b0 land 0xF8 = 0xF0 then begin
         (* 11110xxx 10xxxxxx 10xxxxxx 10xxxxxx – 4-byte *)
-        if !i + 3 >= n then failwith "Reader.decode_utf8: truncated sequence";
+        if !i + 3 >= n then
+          Types.scan_error (pos ()) "truncated UTF-8 sequence at byte offset %d"
+            !i;
         let b1 = Char.code (String.unsafe_get s (!i + 1)) in
         let b2 = Char.code (String.unsafe_get s (!i + 2)) in
         let b3 = Char.code (String.unsafe_get s (!i + 3)) in
@@ -55,9 +63,8 @@ let decode_utf8 (s : string) : int array =
           4 )
       end
       else
-        failwith
-          (Printf.sprintf "Reader.decode_utf8: invalid byte 0x%02X at offset %d"
-             b0 !i)
+        Types.scan_error (pos ()) "invalid UTF-8 byte 0x%02X at byte offset %d"
+          b0 !i
     in
     Array.unsafe_set buf !j cp;
     incr j;
