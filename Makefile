@@ -15,6 +15,12 @@ test:
 fuzz:
 	$(MAKE) -C fuzz fuzz
 
+# Run benchmarks against a large YAML file.
+# Suggested test file: https://github.com/aaubry/YamlDotNet/issues/519
+.PHONY: bench
+bench:
+	opam exec -- dune exec benchmarks/main.exe -- benchmarks/saltern.yml
+
 # Create a local opam switch (= install deps only for this project)
 .PHONY: setup-opam
 setup-opam:

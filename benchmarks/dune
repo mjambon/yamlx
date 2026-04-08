@@ -1,0 +1,4 @@
+(executable
+ (name main)
+ (optional)
+ (libraries yamlx yaml unix))

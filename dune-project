@@ -24,6 +24,7 @@
   ppx_deriving
   (testo :with-test)
   (afl-persistent :dev)
+  (yaml :dev)
  )
  (tags
   (yaml parser serialization)

@@ -7,6 +7,9 @@ _opam/
 # Claude local settings
 .claude/settings.local.json
 
-# Where I put reference material downloaded from the Web       
+# Where I put reference material downloaded from the Web
 reference/
 tmp/
+
+# Large YAML files used for benchmarking (not stored in the repo)
+benchmarks/*.yml
