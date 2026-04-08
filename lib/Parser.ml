@@ -165,14 +165,14 @@ let collect_node_properties p =
   let collecting = ref true in
   while !collecting do
     match peek_kind p with
-    | Some (Anchor name) ->
+    | Anchor name ->
         let tok_pos = (peek_tok p).tok_start_pos in
         if !start = None then start := Some tok_pos;
         if !anchor <> None then
           Types.parse_error tok_pos "a node cannot have two anchors";
         anchor := Some name;
         ignore (get_tok p)
-    | Some (Tag (handle, suffix)) ->
+    | Tag (handle, suffix) ->
         let tok = get_tok p in
         if !start = None then start := Some tok.tok_start_pos;
         tag := Some (resolve_tag p.directives tok.tok_start_pos handle suffix)
@@ -191,7 +191,7 @@ let process_directives p =
   let collecting = ref true in
   while !collecting do
     match peek_kind p with
-    | Some (Directive (name, value)) -> (
+    | Directive (name, value) -> (
         let tok = get_tok p in
         had_directives := true;
         match name with
@@ -249,8 +249,8 @@ let rec produce p =
       let had_dir = process_directives p in
       let sp = (peek_tok p).tok_start_pos in
       match peek_kind p with
-      | Some (Directive _) -> assert false (* already processed *)
-      | Some Document_start ->
+      | Directive _ -> assert false (* already processed *)
+      | Document_start ->
           (* Explicit document start *)
           ignore (get_tok p);
           let ep = (peek_tok p).tok_start_pos in
@@ -264,13 +264,13 @@ let rec produce p =
                  tag_directives = p.directives.tags;
                })
             sp ep
-      | Some Stream_end ->
+      | Stream_end ->
           if had_dir then
             Types.parse_error sp "directive(s) not followed by a document";
           ignore (get_tok p);
           p.state <- Parse_end;
           mk_event Stream_end sp sp
-      | Some Document_end ->
+      | Document_end ->
           if had_dir then
             Types.parse_error sp
               "directive(s) not followed by a document (unexpected '...')";
@@ -294,18 +294,18 @@ let rec produce p =
       let had_dir = process_directives p in
       let sp = (peek_tok p).tok_start_pos in
       match peek_kind p with
-      | Some Stream_end ->
+      | Stream_end ->
           if had_dir then
             Types.parse_error sp "directive(s) not followed by a document";
           ignore (get_tok p);
           p.state <- Parse_end;
           mk_event Stream_end sp sp
-      | Some Document_end ->
+      | Document_end ->
           (* Bare '...' between documents (no new doc started yet): skip it *)
           ignore (get_tok p);
           p.state <- Parse_document_start;
           produce p
-      | Some Document_start ->
+      | Document_start ->
           let tok = get_tok p in
           push_state p Parse_document_end;
           p.state <- Parse_document_content;
@@ -332,20 +332,19 @@ let rec produce p =
   (* ---- Document end ---- *)
   | Parse_document_end -> (
       match peek_kind p with
-      | Some Document_end ->
+      | Document_end ->
           let tok = get_tok p in
           p.state <- Parse_document_start;
           mk_event
             (Document_end { explicit = true })
             tok.tok_start_pos tok.tok_end_pos
-      | Some (Directive _) ->
+      | Directive _ ->
           (* A directive after a document requires an explicit '...' marker first *)
           let tok = peek_tok p in
           Types.parse_error tok.tok_start_pos
             "a directive must be preceded by a document-end marker ('...')"
-      | Some Document_start
-      | Some Stream_end
-      | None ->
+      | Document_start
+      | Stream_end ->
           let sp = (peek_tok p).tok_start_pos in
           p.state <- Parse_document_start;
           mk_event (Document_end { explicit = false }) sp sp
@@ -358,8 +357,8 @@ let rec produce p =
   (* ---- Document content ---- *)
   | Parse_document_content -> (
       match peek_kind p with
-      | Some Document_end
-      | Some Stream_end ->
+      | Document_end
+      | Stream_end ->
           p.state <- pop_state p;
           let sp = (peek_tok p).tok_start_pos in
           (* Empty document: emit an empty plain scalar as the document's node *)
@@ -388,12 +387,12 @@ let rec produce p =
       produce p
   | Parse_block_sequence_entry -> (
       match peek_kind p with
-      | Some Block_entry -> (
+      | Block_entry -> (
           let tok = get_tok p in
           (* BLOCK_ENTRY *)
           match peek_kind p with
-          | Some Block_entry
-          | Some Block_end ->
+          | Block_entry
+          | Block_end ->
               p.state <- Parse_block_sequence_entry;
               (* Empty item *)
               empty_scalar tok.tok_end_pos
@@ -401,27 +400,24 @@ let rec produce p =
               push_state p Parse_block_sequence_entry;
               p.state <- Parse_block_node;
               produce p)
-      | Some Block_end ->
+      | Block_end ->
           let tok = get_tok p in
           p.state <- pop_state p;
           mk_event Sequence_end tok.tok_start_pos tok.tok_end_pos
-      | Some kind ->
+      | kind ->
           Types.parse_error (peek_tok p).tok_start_pos
             "expected block sequence entry or BLOCK_END, got %s"
-            (show_kind kind)
-      | None ->
-          Types.parse_error (peek_tok p).tok_start_pos
-            "unexpected end of tokens in block sequence")
+            (show_kind kind))
   (* ---- Indentless sequence (mapping value is an implicit sequence) ---- *)
   | Parse_indentless_sequence_entry -> (
       match peek_kind p with
-      | Some Block_entry -> (
+      | Block_entry -> (
           let tok = get_tok p in
           match peek_kind p with
-          | Some Block_entry
-          | Some Key
-          | Some Value
-          | Some Block_end ->
+          | Block_entry
+          | Key
+          | Value
+          | Block_end ->
               p.state <- Parse_indentless_sequence_entry;
               empty_scalar tok.tok_end_pos
           | _ ->
@@ -440,44 +436,41 @@ let rec produce p =
       produce p
   | Parse_block_mapping_key -> (
       match peek_kind p with
-      | Some Key -> (
+      | Key -> (
           let tok = get_tok p in
           match peek_kind p with
-          | Some Key
-          | Some Value
-          | Some Block_end ->
+          | Key
+          | Value
+          | Block_end ->
               p.state <- Parse_block_mapping_value;
               empty_scalar tok.tok_end_pos
           | _ ->
               push_state p Parse_block_mapping_value;
               p.state <- Parse_block_node_or_indentless_sequence;
               produce p)
-      | Some Block_end ->
+      | Block_end ->
           let tok = get_tok p in
           p.state <- pop_state p;
           mk_event Mapping_end tok.tok_start_pos tok.tok_end_pos
-      | Some Value ->
+      | Value ->
           (* Implicit empty key: ': value' without a preceding '?' *)
           p.state <- Parse_block_mapping_value;
           let sp = (peek_tok p).tok_start_pos in
           empty_scalar sp
-      | Some kind ->
+      | kind ->
           Types.parse_error (peek_tok p).tok_start_pos
-            "expected block mapping key or BLOCK_END, got %s" (show_kind kind)
-      | None ->
-          Types.parse_error (peek_tok p).tok_start_pos
-            "unexpected end of tokens in block mapping")
+            "expected block mapping key or BLOCK_END, got %s" (show_kind kind))
   | Parse_block_mapping_value -> (
       match peek_kind p with
-      | Some Value -> (
+      | Value -> (
           let tok = get_tok p in
           match peek_kind p with
-          | Some Key
-          | Some Value
-          | Some Block_end ->
+          | Key
+          | Value
+          | Block_end ->
               p.state <- Parse_block_mapping_key;
               empty_scalar tok.tok_end_pos
-          | Some Block_entry ->
+          | Block_entry ->
               push_state p Parse_block_mapping_key;
               p.state <- Parse_indentless_sequence_entry;
               let sp = tok.tok_end_pos in
@@ -500,7 +493,7 @@ let rec produce p =
       (* FLOW_SEQUENCE_START *)
       (* Leading comma: a comma immediately after '[' is invalid in YAML 1.2 *)
       (match peek_kind p with
-      | Some Flow_entry ->
+      | Flow_entry ->
           Types.parse_error fs_tok.tok_end_pos
             "empty entry in flow sequence (unexpected leading comma)"
       | _ -> ());
@@ -510,11 +503,11 @@ let rec produce p =
       (* Parses one entry; this state is entered at start or after consuming a comma.
        After the entry, Parse_flow_sequence_need_separator requires the next comma. *)
       match peek_kind p with
-      | Some Flow_sequence_end ->
+      | Flow_sequence_end ->
           let tok = get_tok p in
           p.state <- pop_state p;
           mk_event Sequence_end tok.tok_start_pos tok.tok_end_pos
-      | Some Key ->
+      | Key ->
           (* Inline mapping inside a flow sequence: [key: val] style.
          Set state to need_separator so that after the mapping, a comma is required. *)
           let tok = get_tok p in
@@ -523,7 +516,7 @@ let rec produce p =
             (Mapping_start
                { anchor = None; tag = None; implicit = true; flow = true })
             tok.tok_start_pos tok.tok_end_pos
-      | Some Value ->
+      | Value ->
           (* Bare ':' with no preceding key → empty implicit key in flow sequence *)
           let sp = (peek_tok p).tok_start_pos in
           p.state <- Parse_flow_sequence_entry_mapping_key;
@@ -539,14 +532,14 @@ let rec produce p =
   | Parse_flow_sequence_need_separator -> (
       (* After an entry, require ',' or ']'; anything else is a missing-comma error. *)
       match peek_kind p with
-      | Some Flow_sequence_end ->
+      | Flow_sequence_end ->
           let tok = get_tok p in
           p.state <- pop_state p;
           mk_event Sequence_end tok.tok_start_pos tok.tok_end_pos
-      | Some Flow_entry ->
+      | Flow_entry ->
           let comma_tok = get_tok p in
           (match peek_kind p with
-          | Some Flow_entry ->
+          | Flow_entry ->
               Types.parse_error comma_tok.tok_end_pos
                 "empty entry in flow sequence (unexpected consecutive comma)"
           | _ -> ());
@@ -558,9 +551,9 @@ let rec produce p =
             "missing comma between flow sequence entries")
   | Parse_flow_sequence_entry_mapping_key -> (
       match peek_kind p with
-      | Some Value
-      | Some Flow_entry
-      | Some Flow_sequence_end ->
+      | Value
+      | Flow_entry
+      | Flow_sequence_end ->
           p.state <- Parse_flow_sequence_entry_mapping_value;
           let sp = (peek_tok p).tok_start_pos in
           empty_scalar sp
@@ -570,11 +563,11 @@ let rec produce p =
           produce p)
   | Parse_flow_sequence_entry_mapping_value -> (
       match peek_kind p with
-      | Some Value -> (
+      | Value -> (
           ignore (get_tok p);
           match peek_kind p with
-          | Some Flow_entry
-          | Some Flow_sequence_end ->
+          | Flow_entry
+          | Flow_sequence_end ->
               p.state <- Parse_flow_sequence_entry_mapping_end;
               let sp = (peek_tok p).tok_start_pos in
               empty_scalar sp
@@ -600,16 +593,16 @@ let rec produce p =
       (* Parses one key; entered after '{' (first key) or after consuming a comma.
        After the key-value pair, Parse_flow_mapping_need_separator requires a comma. *)
       match peek_kind p with
-      | Some Flow_mapping_end ->
+      | Flow_mapping_end ->
           let tok = get_tok p in
           p.state <- pop_state p;
           mk_event Mapping_end tok.tok_start_pos tok.tok_end_pos
-      | Some Key -> (
+      | Key -> (
           let tok = get_tok p in
           match peek_kind p with
-          | Some Value
-          | Some Flow_entry
-          | Some Flow_mapping_end ->
+          | Value
+          | Flow_entry
+          | Flow_mapping_end ->
               p.state <- Parse_flow_mapping_value;
               empty_scalar tok.tok_end_pos
           | _ ->
@@ -624,11 +617,11 @@ let rec produce p =
   | Parse_flow_mapping_need_separator -> (
       (* After a key-value pair: require ',' or '}'. *)
       match peek_kind p with
-      | Some Flow_mapping_end ->
+      | Flow_mapping_end ->
           let tok = get_tok p in
           p.state <- pop_state p;
           mk_event Mapping_end tok.tok_start_pos tok.tok_end_pos
-      | Some Flow_entry ->
+      | Flow_entry ->
           ignore (get_tok p);
           p.state <- Parse_flow_mapping_key;
           produce p
@@ -638,11 +631,11 @@ let rec produce p =
             "missing comma between flow mapping entries")
   | Parse_flow_mapping_value -> (
       match peek_kind p with
-      | Some Value -> (
+      | Value -> (
           ignore (get_tok p);
           match peek_kind p with
-          | Some Flow_entry
-          | Some Flow_mapping_end ->
+          | Flow_entry
+          | Flow_mapping_end ->
               p.state <- Parse_flow_mapping_need_separator;
               let sp = (peek_tok p).tok_start_pos in
               empty_scalar sp
@@ -663,7 +656,7 @@ and parse_node p ~allow_indentless ~in_flow:_ =
   if
     check p [ Alias "" ] |> fun _ ->
     match peek_kind p with
-    | Some (Alias _) -> true
+    | Alias _ -> true
     | _ -> false
   then begin
     let tok = get_tok p in
@@ -683,31 +676,31 @@ and parse_node p ~allow_indentless ~in_flow:_ =
       | None -> sp
     in
     match peek_kind p with
-    | Some Block_sequence_start ->
+    | Block_sequence_start ->
         p.state <- Parse_block_sequence_first_entry;
         let ev_sp = (peek_tok p).tok_start_pos in
         mk_event
           (Sequence_start { anchor; tag; implicit = tag = None; flow = false })
           node_start ev_sp
-    | Some Block_mapping_start ->
+    | Block_mapping_start ->
         p.state <- Parse_block_mapping_first_key;
         let ev_sp = (peek_tok p).tok_start_pos in
         mk_event
           (Mapping_start { anchor; tag; implicit = tag = None; flow = false })
           node_start ev_sp
-    | Some Flow_sequence_start ->
+    | Flow_sequence_start ->
         let ev_sp = (peek_tok p).tok_start_pos in
         p.state <- Parse_flow_sequence_first_entry;
         mk_event
           (Sequence_start { anchor; tag; implicit = tag = None; flow = true })
           node_start ev_sp
-    | Some Flow_mapping_start ->
+    | Flow_mapping_start ->
         let ev_sp = (peek_tok p).tok_start_pos in
         p.state <- Parse_flow_mapping_first_key;
         mk_event
           (Mapping_start { anchor; tag; implicit = tag = None; flow = true })
           node_start ev_sp
-    | Some Block_entry when allow_indentless ->
+    | Block_entry when allow_indentless ->
         (* Indentless sequence: a sequence that starts at the current indent.
          The continuation (e.g. Parse_block_mapping_key) is already on the
          state stack from the caller; do NOT push again. *)
@@ -716,7 +709,7 @@ and parse_node p ~allow_indentless ~in_flow:_ =
         mk_event
           (Sequence_start { anchor; tag; implicit = tag = None; flow = false })
           node_start ev_sp
-    | Some (Scalar (value, style)) ->
+    | Scalar (value, style) ->
         let tok = get_tok p in
         p.state <- pop_state p;
         mk_event

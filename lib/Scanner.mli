@@ -23,9 +23,9 @@ val check_token : state -> Types.token_kind list -> bool
     Fields inside the constructor are ignored; only the constructor tag is
     checked. *)
 
-val peek_kind : state -> Types.token_kind option
-(** Return the constructor of the next token's kind, or [None] at end of input.
-*)
+val peek_kind : state -> Types.token_kind
+(** Return the kind of the next token, or [Stream_end] when no token is
+    available. *)
 
 val drain_comments : state -> (int * int * bool * string) list
 (** Return all accumulated comments in source order as

@@ -26,6 +26,16 @@
 
 open Types
 
+(** [string_forall_from i f s] is true iff [f] holds for every character of [s]
+    at index [>= i]. Avoids allocating a substring. *)
+let string_forall_from start f s =
+  let n = String.length s in
+  let i = ref start in
+  while !i < n && f s.[!i] do
+    incr i
+  done;
+  !i = n
+
 (* ------------------------------------------------------------------ *)
 (* YAML 1.2 matchers                                                     *)
 (* ------------------------------------------------------------------ *)
@@ -48,9 +58,7 @@ let is_decimal_int s =
       (* Multi-digit: must not start with 0 *)
       s.[start] >= '1'
       && s.[start] <= '9'
-      && String.sub s (start + 1) (n - start - 1)
-         |> String.to_seq
-         |> Seq.for_all (fun c -> c >= '0' && c <= '9')
+      && string_forall_from (start + 1) (fun c -> c >= '0' && c <= '9') s
   end
 
 (** True if [s] is a hex integer ([0x…]). *)
@@ -59,9 +67,7 @@ let is_hex_int s =
   n > 2
   && s.[0] = '0'
   && (s.[1] = 'x' || s.[1] = 'X')
-  && String.sub s 2 (n - 2)
-     |> String.to_seq
-     |> Seq.for_all Char_class.(fun c -> is_hex_digit (Char.code c))
+  && string_forall_from 2 Char_class.(fun c -> is_hex_digit (Char.code c)) s
 
 (** True if [s] is a YAML 1.2 octal integer ([0o…]). *)
 let is_octal_int_12 s =
@@ -69,9 +75,7 @@ let is_octal_int_12 s =
   n > 2
   && s.[0] = '0'
   && (s.[1] = 'o' || s.[1] = 'O')
-  && String.sub s 2 (n - 2)
-     |> String.to_seq
-     |> Seq.for_all (fun c -> c >= '0' && c <= '7')
+  && string_forall_from 2 (fun c -> c >= '0' && c <= '7') s
 
 (** Try to parse a float. Returns [None] for non-numeric strings. *)
 let try_float_12 s =
@@ -112,9 +116,7 @@ let is_octal_int_11 s =
     let c1 = s.[1] in
     s.[0] = '0'
     && c1 >= '0' && c1 <= '7'
-    && String.sub s 1 (n - 1)
-       |> String.to_seq
-       |> Seq.for_all (fun c -> c >= '0' && c <= '7')
+    && string_forall_from 1 (fun c -> c >= '0' && c <= '7') s
 
 (** Try to parse a YAML 1.1 sexagesimal integer like [3:25:45] (= 12345). The
     first component must be [1–9]; subsequent components are [0–59]. Returns
