@@ -1,0 +1,7 @@
+(executable
+ (name fuzz)
+ (libraries
+   crowbar
+   yamlx
+ )
+)
