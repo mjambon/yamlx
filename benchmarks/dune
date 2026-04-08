@@ -1,0 +1,9 @@
+(executable
+ (name yamlx_benchmarks)
+ (optional)
+ (libraries
+   yamlx
+   yaml
+   unix
+ )
+)

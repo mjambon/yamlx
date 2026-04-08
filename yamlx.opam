@@ -19,6 +19,7 @@ depends: [
   "ppx_deriving"
   "testo" {with-test}
   "afl-persistent" {dev}
+  "yaml" {dev}
   "odoc" {with-doc}
 ]
 build: [
