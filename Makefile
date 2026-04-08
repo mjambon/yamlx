@@ -54,3 +54,40 @@ clean:
 .PHONY: distclean
 distclean:
 	 git clean -dfX
+
+# ------------------------------------------------------------------ #
+# Release process                                                      #
+# ------------------------------------------------------------------ #
+#
+# Prerequisites: dune-release must be installed.
+#   opam install dune-release
+#
+# Steps:
+#   1. Run 'make opam-files' to regenerate the opam files from dune-project.
+#   2. Review and update CHANGES.md: add a section heading with the version
+#      and date, e.g. "## 0.2.0 (2026-05-01)".
+#   3. Commit the changes on the main branch.
+#   4. Run 'dune-release tag'   — picks the version from CHANGES.md and tags
+#                                  the commit; asks for confirmation.
+#   5. Run 'dune-release distrib' — builds and checks the release tarball.
+#   6. Run 'dune-release publish' — uploads the tarball to GitHub and creates
+#                                   the GitHub release (point of no return).
+#   7. Run 'dune-release opam pkg' — prepares the opam package description.
+#   8. Run 'dune-release opam submit' — opens a PR on opam-repository.
+#   9. Monitor the opam-repository PR; fix CI failures and address reviewer
+#      feedback until the PR is merged.
+#
+# Steps 4–8 can be run in one shot with 'make opam-release'.
+# If anything fails after step 6, increment the version and start over.
+#
+.PHONY: opam-files
+opam-files:
+	opam exec -- dune build yamlx.opam
+
+.PHONY: opam-release
+opam-release:
+	dune-release tag
+	dune-release distrib
+	dune-release publish
+	dune-release opam pkg
+	dune-release opam submit
