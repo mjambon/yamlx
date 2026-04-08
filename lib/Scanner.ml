@@ -1824,8 +1824,9 @@ let check_token (scn : state) (kinds : token_kind list) : bool =
   if Queue.is_empty scn.tokens then false
   else List.mem (Queue.peek scn.tokens).tok_kind kinds
 
-(** Peek at the kind of the next token without consuming it. *)
-let peek_kind (scn : state) : token_kind option =
+(** Peek at the kind of the next token without consuming it. Returns
+    [Stream_end] when no token is available. *)
+let peek_kind (scn : state) : token_kind =
   ensure_token scn;
-  if Queue.is_empty scn.tokens then None
-  else Some (Queue.peek scn.tokens).tok_kind
+  if Queue.is_empty scn.tokens then Stream_end
+  else (Queue.peek scn.tokens).tok_kind
