@@ -7,7 +7,7 @@ build:
 
 .PHONY: test
 test:
-	opam exec -- dune runtest
+	opam exec -- dune runtest -f
 
 # Generate random YAML input and try parsing it and printing it until
 # something bad happens.
