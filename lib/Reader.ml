@@ -14,16 +14,18 @@ let eof = Char_class.eof
 (* UTF-8 decoding                                                       *)
 (* ------------------------------------------------------------------ *)
 
-(** Decode a UTF-8 string to an array of Unicode codepoints. Raises
-    [Types.Error (Types.Scan_error _)] if the input contains invalid UTF-8 byte
-    sequences. *)
+(** Decode a UTF-8 string to an array of normalized Unicode codepoints in a
+    single pass. Combines UTF-8 decoding, BOM stripping, and line-ending
+    normalization (CR+LF → LF, bare CR → LF, NEL/LS/PS → LF). Raises
+    [Types.Error (Types.Scan_error _)] on invalid UTF-8. *)
 let decode_utf8 (s : string) : int array =
   let n = String.length s in
-  (* Upper bound: one codepoint per byte in the ASCII case *)
+  (* Upper bound: one codepoint per byte; CR+LF pairs collapse to one *)
   let buf = Array.make n 0 in
   let j = ref 0 in
   let i = ref 0 in
   let pos () = { Types.zero_pos with offset_bytes = !i } in
+  let first = ref true in
   while !i < n do
     let b0 = Char.code (String.unsafe_get s !i) in
     let cp, width =
@@ -66,9 +68,25 @@ let decode_utf8 (s : string) : int array =
         Types.scan_error (pos ()) "invalid UTF-8 byte 0x%02X at byte offset %d"
           b0 !i
     in
-    Array.unsafe_set buf !j cp;
-    incr j;
-    i := !i + width
+    i := !i + width;
+    (* Strip leading BOM (U+FEFF) *)
+    if !first && cp = 0xFEFF then first := false
+    else begin
+      first := false;
+      (* Normalize line endings to LF *)
+      let norm =
+        if cp = 0x0D then begin
+          (* CR: consume a following LF if present (LF is ASCII, always 1 byte) *)
+          if !i < n && Char.code (String.unsafe_get s !i) = 0x0A then
+            i := !i + 1;
+          0x0A
+        end
+        else if cp = 0x85 || cp = 0x2028 || cp = 0x2029 then 0x0A
+        else cp
+      in
+      Array.unsafe_set buf !j norm;
+      incr j
+    end
   done;
   Array.sub buf 0 !j
 
@@ -90,36 +108,6 @@ let encode_utf8 (buf : Buffer.t) (cp : int) : unit =
     Buffer.add_char buf (Char.chr (0x80 lor ((cp lsr 6) land 0x3F)));
     Buffer.add_char buf (Char.chr (0x80 lor (cp land 0x3F)))
   end
-
-(* ------------------------------------------------------------------ *)
-(* Line-ending normalization                                            *)
-(* ------------------------------------------------------------------ *)
-
-(** Normalize line endings and strip an optional leading BOM. Returns a fresh
-    array containing the normalized codepoints. *)
-let normalize (raw : int array) : int array =
-  let n = Array.length raw in
-  let out = Array.make (n + 1) 0 in
-  let j = ref 0 in
-  let i = ref 0 in
-  (* Skip leading BOM (U+FEFF) *)
-  if n > 0 && raw.(0) = 0xFEFF then incr i;
-  while !i < n do
-    let cp = Array.unsafe_get raw !i in
-    let norm =
-      if cp = 0x0D then begin
-        (* CR: normalize to LF, consume a following LF if present *)
-        if !i + 1 < n && Array.unsafe_get raw (!i + 1) = 0x0A then incr i;
-        0x0A
-      end
-      else if cp = 0x85 || cp = 0x2028 || cp = 0x2029 then 0x0A
-      else cp
-    in
-    Array.unsafe_set out !j norm;
-    incr j;
-    incr i
-  done;
-  Array.sub out 0 !j
 
 (* ------------------------------------------------------------------ *)
 (* Reader type                                                           *)
@@ -164,8 +152,7 @@ let check_encoding (s : string) : unit =
 (** Create a Reader from a UTF-8 string. *)
 let of_string (s : string) : t =
   check_encoding s;
-  let raw = decode_utf8 s in
-  let buf = normalize raw in
+  let buf = decode_utf8 s in
   { buf; idx = 0; byte_idx = 0; line = 1; column = 0; column_bytes = 0 }
 
 (** Total number of codepoints in the input. *)
