@@ -324,12 +324,12 @@ module Nodes = struct
     | Ok input -> of_yaml ~file:path ?max_depth input
 
   let to_yaml = Printer.to_yaml
-  let to_yaml_file nodes path = write_file path (to_yaml nodes)
+  let to_yaml_file path nodes = write_file path (to_yaml nodes)
 
   let to_plain_yaml_exn ?strict ?expansion_limit docs =
     Printer.to_plain_yaml ?strict ?expansion_limit docs
 
-  let to_plain_yaml_file ?strict ?expansion_limit nodes path =
+  let to_plain_yaml_file ?strict ?expansion_limit path nodes =
     match
       catch_errors (fun () -> to_plain_yaml_exn ?strict ?expansion_limit nodes)
     with
@@ -546,7 +546,7 @@ module Values = struct
 
   let to_nodes values = List.map value_to_node values
   let to_yaml values = Nodes.to_yaml (to_nodes values)
-  let to_yaml_file values path = write_file path (to_yaml values)
+  let to_yaml_file path values = write_file path (to_yaml values)
 end
 
 (* ------------------------------------------------------------------ *)
