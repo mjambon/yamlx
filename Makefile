@@ -24,7 +24,6 @@ setup-opam:
 .PHONY: install-deps
 install-deps:
 	opam install ./yamlx.opam -y --deps-only --with-test --with-doc
-	opam install afl-persistent -y
 
 # Build odoc HTML documentation and copy it into docs/ (served by GitHub Pages)
 .PHONY: doc
