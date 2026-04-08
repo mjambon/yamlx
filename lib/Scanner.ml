@@ -336,8 +336,6 @@ let scan_to_next_token scn =
         let is_line_comment = not !had_newline in
         advance scn 1;
         (* consume '#' *)
-        if peek scn 0 = 0x20 then advance scn 1;
-        (* skip one optional space *)
         let buf = Buffer.create 64 in
         let continue_comment = ref true in
         while !continue_comment do

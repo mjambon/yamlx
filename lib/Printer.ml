@@ -87,13 +87,13 @@ let count_trailing_newlines s =
     terminated by ['\n']. Returns [""] when [comments] is empty. *)
 let emit_heads ~level comments =
   String.concat ""
-    (List_ext.map (fun h -> indent level ^ "# " ^ h ^ "\n") comments)
+    (List_ext.map (fun h -> indent level ^ "#" ^ h ^ "\n") comments)
 
 (** Return the inline suffix for a line comment, e.g. ["  # text"]. Returns [""]
     when [lc] is [None]. *)
 let emit_lc = function
   | None -> ""
-  | Some t -> "  # " ^ t
+  | Some t -> "  #" ^ t
 
 (* ------------------------------------------------------------------ *)
 (* Block scalar emission                                                 *)
@@ -229,7 +229,7 @@ let rec block_value ~level node =
         if pre <> "" then Buffer.add_string b (String.trim pre ^ "\n");
         List.iter (fun item -> Buffer.add_string b (seq_item ~level item)) items;
         List.iter
-          (fun fc -> Buffer.add_string b (indent level ^ "# " ^ fc ^ "\n"))
+          (fun fc -> Buffer.add_string b (indent level ^ "#" ^ fc ^ "\n"))
           foot_comments;
         (true, Buffer.contents b)
       end
@@ -249,7 +249,7 @@ let rec block_value ~level node =
           (fun (k, v) -> Buffer.add_string b (map_pair ~level k v))
           pairs;
         List.iter
-          (fun fc -> Buffer.add_string b (indent level ^ "# " ^ fc ^ "\n"))
+          (fun fc -> Buffer.add_string b (indent level ^ "#" ^ fc ^ "\n"))
           foot_comments;
         (true, Buffer.contents b)
       end
@@ -309,7 +309,7 @@ and seq_item ~level item =
         (fun (k, v) -> Buffer.add_string b (map_pair ~level:(level + 1) k v))
         rest_pairs;
       List.iter
-        (fun fc -> Buffer.add_string b (indent (level + 1) ^ "# " ^ fc ^ "\n"))
+        (fun fc -> Buffer.add_string b (indent (level + 1) ^ "#" ^ fc ^ "\n"))
         foot_comments;
       Buffer.contents b
   | _ ->
