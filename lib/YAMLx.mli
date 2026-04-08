@@ -177,9 +177,10 @@ val default_expansion_limit : int
 val default_max_depth : int
 (** Default maximum nesting depth (512). *)
 
-val string_of_error : yaml_error -> string
-(** Format a {!yaml_error} using {!default_format_loc} followed by
-    [": message"]. Equivalent to [default_format_loc e.loc ^ ": " ^ e.msg]. *)
+val show_yaml_error :
+  ?format_loc:(?file:string -> loc -> string) -> yaml_error -> string
+(** Format a {!yaml_error} as ["location: message"]. Uses {!default_format_loc}
+    by default; pass [~format_loc] to customise location formatting. *)
 
 (** {1 Scalar styles} *)
 

@@ -227,8 +227,9 @@ let default_format_loc ?file (loc : loc) : string =
   | None -> loc_str
   | Some f -> "file " ^ f ^ ", " ^ loc_str
 
-let string_of_error (e : yaml_error) : string =
-  default_format_loc e.loc ^ ": " ^ e.msg
+let show_yaml_error ?(format_loc = default_format_loc) (e : yaml_error) : string
+    =
+  format_loc e.loc ^ ": " ^ e.msg
 
 let read_file path =
   let ic = open_in path in
