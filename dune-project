@@ -20,7 +20,7 @@
  (synopsis "Pure-OCaml YAML 1.2 parser with a lossless, comment-preserving AST")
  (description "YAMLx is a pure-OCaml YAML 1.2 library. It passes all 371 tests from the yaml-test-suite and has no C bindings or external runtime dependencies. The parsed node tree preserves scalar styles, flow vs. block collection style, tags, anchors, source positions, and comments. A pretty-printer can round-trip the AST back to YAML. A typed-value resolver applies the YAML 1.2 JSON schema and returns Null / Bool / Int / Float / String / Seq / Map values. Structured errors carry line, column, and byte-offset information.\n\nYAMLx is currently released under the AGPL. A commercial license and a path to a fully permissive ISC license are available — see FUNDING.md.")
  (depends
-  ocaml
+  (ocaml (>= 4.14.0))
   ppx_deriving
   (testo :with-test)
   (afl-persistent :dev)
