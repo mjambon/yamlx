@@ -51,4 +51,6 @@ commercial users a compliant way to use it in the meantime.
 
 ## Donors
 
-*No donors yet — be the first!*
+* Andrey Popp
+* _your name here_
+
