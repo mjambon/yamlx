@@ -267,7 +267,7 @@ type node =
     - Decimal or scientific floats; [.inf], [.nan] variants → {!Float}
     - Everything else, and all quoted or block scalars → {!String}
 
-    Each constructor carries a {!loc} giving the source range of the
+    Each constructor carries a {!type-loc} giving the source range of the
     corresponding YAML node. Use {!equal_value} for location-independent
     structural equality. *)
 type value =
@@ -279,6 +279,20 @@ type value =
   | Seq of loc * value list
   | Map of loc * (loc * value * value) list
 [@@deriving show]
+
+val value_loc : value -> loc
+(** Return the source location carried by a {!value}.
+
+    Every value constructor stores the location of the corresponding YAML node.
+    This is useful for constructing error messages in pattern-match catch-all
+    arms, for example:
+    {[
+    match x with
+    | Int (_, i) -> i
+    | bad ->
+        ksprintf failwith "%s: expected an int"
+          (bad |> YAMLx.value_loc |> YAMLx.default_format_loc)
+    ]} *)
 
 (** {1 Node operations} *)
 
