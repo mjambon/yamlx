@@ -1,3 +1,22 @@
+## Unreleased
+
+### Comment attachment improvements
+
+- Comments between a mapping key and its value (when the value starts on the
+  next line) are now correctly attached as `head_comments` of the value node.
+  Previously they were silently discarded.
+- Trailing comments after the last item of a block collection are now attached
+  as `foot_comments` of the collection and printed at the correct indentation
+  level.  Previously they were attached to the last item's `foot_comments` and
+  printed at column 0.
+- Block scalar header comments (`| # note`, `> # note`) are now captured and
+  round-trip correctly.  Previously the comment was silently dropped.
+- Standalone comments that appear between two documents (before `---`) are now
+  attached as `foot_comments` of the preceding document rather than leaking
+  into the `head_comments` of the following document's root node.
+- Added `foot_comments : string list` field to `Scalar_node` and `Alias_node`
+  (previously only collection nodes had this field).
+
 ## 0.1.0 (2026-04-08)
 
 Initial release.

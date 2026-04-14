@@ -381,6 +381,116 @@ let comment_tests () =
   ]
 
 (* ------------------------------------------------------------------ *)
+(* Node-level comment attachment tests                                   *)
+(* ------------------------------------------------------------------ *)
+
+(** Verify that the comment attacher places comments on the correct node fields
+    rather than just checking that roundtrip output is unchanged. *)
+let comment_node_tests () =
+  let ss = Testo.(list string) in
+  let os = Testo.(option string) in
+  [
+    Testo.create ~category:[ "comment-nodes" ]
+      "head comment attaches to sequence value, not mapping key" (fun () ->
+        (* "# before first" is between the mapping key "items" and its sequence
+           value.  It must land on the sequence's head_comments. *)
+        let nodes =
+          YAMLx.Nodes.of_yaml_exn "items:\n  # before first\n  - a\n  - b\n"
+        in
+        match nodes with
+        | [ Mapping_node { pairs = [ (_, seq) ]; _ } ] -> (
+            match seq with
+            | Sequence_node { head_comments; _ } ->
+                Testo.check ss [ " before first" ] head_comments
+            | _ -> failwith "expected Sequence_node for value")
+        | _ -> failwith "expected single-pair mapping");
+    Testo.create ~category:[ "comment-nodes" ]
+      "trailing comment attaches as foot of sequence, not last item" (fun () ->
+        (* "# trailing" is after the last item of the sequence and must be in
+           the sequence's foot_comments (indented correctly), not the last
+           item's foot_comments (which would be unindented). *)
+        let nodes =
+          YAMLx.Nodes.of_yaml_exn
+            "items:\n  - a\n  - b\n  # trailing\nnext: x\n"
+        in
+        match nodes with
+        | [ Mapping_node { pairs = (_, seq) :: _; _ } ] -> (
+            match seq with
+            | Sequence_node { items; foot_comments; _ } -> (
+                Testo.check ss [ " trailing" ] foot_comments;
+                (* also verify the last item itself has no foot comment *)
+                match List.rev items with
+                | Scalar_node { foot_comments = item_feet; _ } :: _ ->
+                    Testo.check ss [] item_feet
+                | _ -> failwith "expected scalar last item")
+            | _ -> failwith "expected Sequence_node")
+        | _ -> failwith "expected mapping with at least one pair");
+    Testo.create ~category:[ "comment-nodes" ]
+      "block scalar header comment attaches as line_comment" (fun () ->
+        (* "| # note" — the comment on the block scalar header line must be
+           captured as the scalar's line_comment. *)
+        let nodes = YAMLx.Nodes.of_yaml_exn "desc: |  # note\n  content\n" in
+        match nodes with
+        | [ Mapping_node { pairs = [ (_, scalar) ]; _ } ] -> (
+            match scalar with
+            | Scalar_node { line_comment; style = Literal; _ } ->
+                Testo.check os (Some " note") line_comment
+            | _ -> failwith "expected Literal Scalar_node for value")
+        | _ -> failwith "expected single-pair mapping");
+    Testo.create ~category:[ "comment-nodes" ]
+      "comment between key and value attaches as head of value" (fun () ->
+        (* "# about child" is on a line between "parent:" and "child: x".
+           It must land on the inner mapping's head_comments, not disappear
+           into the outer key's foot_comments. *)
+        let nodes =
+          YAMLx.Nodes.of_yaml_exn "parent:\n  # about child\n  child: x\n"
+        in
+        match nodes with
+        | [ Mapping_node { pairs = [ (_, inner) ]; _ } ] -> (
+            match inner with
+            | Mapping_node { head_comments; _ } ->
+                Testo.check ss [ " about child" ] head_comments
+            | _ -> failwith "expected Mapping_node for value")
+        | _ -> failwith "expected single-pair mapping");
+    Testo.create ~category:[ "comment-nodes" ]
+      "comment before --- attaches as foot of preceding document" (fun () ->
+        (* "#c" appears after the content of doc 1 and before the "---"
+           separator of doc 2.  It must be in doc 1's foot_comments and must
+           NOT appear in doc 2's head_comments. *)
+        let nodes = YAMLx.Nodes.of_yaml_exn "xxx\n#c\n---\nyyy\n" in
+        match nodes with
+        | [ doc1; doc2 ] -> (
+            (match doc1 with
+            | Scalar_node { value = "xxx"; foot_comments; _ } ->
+                Testo.check ss [ "c" ] foot_comments
+            | _ -> failwith "expected scalar 'xxx' for doc1");
+            match doc2 with
+            | Scalar_node { value = "yyy"; head_comments; _ } ->
+                Testo.check ss [] head_comments
+            | _ -> failwith "expected scalar 'yyy' for doc2")
+        | _ -> failwith "expected exactly two documents");
+    Testo.create ~category:[ "comment-nodes" ]
+      "head comment attaches to document root node" (fun () ->
+        (* A comment before the only node in a document belongs on that
+           node's head_comments. *)
+        let nodes = YAMLx.Nodes.of_yaml_exn "# preamble\nkey: value\n" in
+        match nodes with
+        | [ Mapping_node { head_comments; _ } ] ->
+            Testo.check ss [ " preamble" ] head_comments
+        | _ -> failwith "expected single mapping");
+    Testo.create ~category:[ "comment-nodes" ]
+      "line comment attaches to scalar value node" (fun () ->
+        let nodes = YAMLx.Nodes.of_yaml_exn "key: value  # inline\n" in
+        match nodes with
+        | [ Mapping_node { pairs = [ (_, v) ]; _ } ] -> (
+            match v with
+            | Scalar_node { line_comment; _ } ->
+                Testo.check os (Some " inline") line_comment
+            | _ -> failwith "expected scalar value")
+        | _ -> failwith "expected single-pair mapping");
+  ]
+
+(* ------------------------------------------------------------------ *)
 (* Expansion limit / YAML bomb tests                                     *)
 (* ------------------------------------------------------------------ *)
 
@@ -1201,7 +1311,8 @@ let () =
   YAMLx.register_exception_printers ();
   Testo.interpret_argv ~project_name:"yamlx" (fun _tags ->
       unit_tests () @ encoding_tests () @ roundtrip_tests () @ comment_tests ()
-      @ anchor_tests () @ printer_tests () @ expansion_limit_tests ()
-      @ depth_limit_tests () @ performance_tests () @ conversion_tests ()
-      @ duplicate_key_tests () @ yaml_1_1_tests () @ plain_mode_tests ()
-      @ strict_keys_tests () @ cycle_tests () @ suite_tests ())
+      @ comment_node_tests () @ anchor_tests () @ printer_tests ()
+      @ expansion_limit_tests () @ depth_limit_tests () @ performance_tests ()
+      @ conversion_tests () @ duplicate_key_tests () @ yaml_1_1_tests ()
+      @ plain_mode_tests () @ strict_keys_tests () @ cycle_tests ()
+      @ suite_tests ())
