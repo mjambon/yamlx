@@ -166,8 +166,8 @@ val catch_errors :
     become ["file foo.yaml: msg"].
 
     [~format_loc] overrides how source locations are formatted (default:
-    {!default_format_loc}). Provide a custom implementation to adapt the output
-    for editors, LSP servers, or structured logging. *)
+    {!format_loc}). Provide a custom implementation to adapt the output for
+    editors, LSP servers, or structured logging. *)
 
 val register_exception_printers :
   ?format_loc:(?file:string -> loc -> string) -> unit -> unit
