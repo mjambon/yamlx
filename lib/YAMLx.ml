@@ -223,7 +223,7 @@ let value_loc : value -> loc = function
 (* Error formatting                                                      *)
 (* ------------------------------------------------------------------ *)
 
-let default_format_loc ?file (loc : loc) : string =
+let format_loc ?file (loc : loc) : string =
   let ({ start_pos; end_pos } : loc) = loc in
   let loc_str =
     if start_pos.line = end_pos.line then
@@ -240,8 +240,9 @@ let default_format_loc ?file (loc : loc) : string =
   | None -> loc_str
   | Some f -> "file " ^ f ^ ", " ^ loc_str
 
-let show_yaml_error ?(format_loc = default_format_loc) (e : yaml_error) : string
-    =
+let default_format_loc = format_loc
+
+let show_yaml_error ?(format_loc = format_loc) (e : yaml_error) : string =
   format_loc e.loc ^ ": " ^ e.msg
 
 let read_file path =
