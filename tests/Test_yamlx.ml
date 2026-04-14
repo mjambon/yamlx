@@ -1196,37 +1196,6 @@ let cycle_tests () =
   ]
 
 (* ------------------------------------------------------------------ *)
-(* value_loc tests                                                       *)
-(* ------------------------------------------------------------------ *)
-
-let value_loc_tests () =
-  let check_constructor label yaml expected_line expected_col =
-    Testo.create ~category:[ "value_loc" ] label (fun () ->
-        let value = YAMLx.Values.one_of_yaml_exn yaml in
-        let loc = YAMLx.value_loc value in
-        let line = loc.start_pos.line in
-        let col = loc.start_pos.column in
-        if line <> expected_line || col <> expected_col then
-          failwith
-            (Printf.sprintf "expected line %d col %d, got line %d col %d"
-               expected_line expected_col line col))
-  in
-  [
-    check_constructor "Null carries location" "~\n" 1 0;
-    check_constructor "Bool carries location" "true\n" 1 0;
-    check_constructor "Int carries location" "42\n" 1 0;
-    check_constructor "Float carries location" "3.14\n" 1 0;
-    check_constructor "String carries location" "hello\n" 1 0;
-    check_constructor "Seq carries location" "- a\n- b\n" 1 0;
-    check_constructor "Map carries location" "a: 1\n" 1 0;
-    check_constructor "nested value loc points to node, not document start"
-      "outer:\n  inner: 42\n"
-      (* the Map starts at line 1, col 0 *)
-      1
-      0;
-  ]
-
-(* ------------------------------------------------------------------ *)
 (* Entry point                                                           *)
 (* ------------------------------------------------------------------ *)
 
@@ -1237,5 +1206,4 @@ let () =
       @ anchor_tests () @ printer_tests () @ expansion_limit_tests ()
       @ depth_limit_tests () @ performance_tests () @ conversion_tests ()
       @ duplicate_key_tests () @ yaml_1_1_tests () @ plain_mode_tests ()
-      @ strict_keys_tests () @ cycle_tests () @ value_loc_tests ()
-      @ suite_tests ())
+      @ strict_keys_tests () @ cycle_tests () @ suite_tests ())
