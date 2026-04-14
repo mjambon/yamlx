@@ -113,17 +113,15 @@ let spec =
 (* node-noloc type: node AST without source locations or heights         *)
 (* ------------------------------------------------------------------ *)
 
-type scalar_style = Plain | Single_quoted | Double_quoted | Literal | Folded
-[@@deriving show { with_path = false }]
-
 type noloc_node =
   | Scalar of {
       anchor : string option;
       tag : string option;
       value : string;
-      style : scalar_style;
+      style : YAMLx.scalar_style;
       head_comments : string list;
       line_comment : string option;
+      foot_comments : string list;
     }
   | Sequence of {
       anchor : string option;
@@ -147,15 +145,9 @@ type noloc_node =
       name : string;
       head_comments : string list;
       line_comment : string option;
+      foot_comments : string list;
     }
 [@@deriving show { with_path = false }]
-
-let noloc_style = function
-  | YAMLx.Plain -> Plain
-  | YAMLx.Single_quoted -> Single_quoted
-  | YAMLx.Double_quoted -> Double_quoted
-  | YAMLx.Literal -> Literal
-  | YAMLx.Folded -> Folded
 
 let rec noloc_node = function
   | YAMLx.Scalar_node r ->
@@ -164,9 +156,10 @@ let rec noloc_node = function
           anchor = r.anchor;
           tag = r.tag;
           value = r.value;
-          style = noloc_style r.style;
+          style = r.style;
           head_comments = r.head_comments;
           line_comment = r.line_comment;
+          foot_comments = r.foot_comments;
         }
   | YAMLx.Sequence_node r ->
       Sequence
@@ -196,6 +189,7 @@ let rec noloc_node = function
           name = r.name;
           head_comments = r.head_comments;
           line_comment = r.line_comment;
+          foot_comments = r.foot_comments;
         }
 
 (* ------------------------------------------------------------------ *)
