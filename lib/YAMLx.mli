@@ -134,7 +134,7 @@ exception Error of error
       | exception YAMLx.Error _ -> ...
     ]} *)
 
-val default_format_loc : ?file:string -> loc -> string
+val format_loc : ?file:string -> loc -> string
 (** Default location formatter used by {!catch_errors} and
     {!register_exception_printers}.
 
@@ -148,6 +148,10 @@ val default_format_loc : ?file:string -> loc -> string
 
     Columns are 0-based Unicode codepoint offsets from the start of the line,
     matching the {!pos} fields [column] (not [column_bytes]). *)
+
+val default_format_loc : ?file:string -> loc -> string
+[@@deprecated "Use 'format_loc' instead."]
+(** @deprecated After version 0.1.0, this function was renamed {!format_loc}. *)
 
 val catch_errors :
   ?file:string ->
