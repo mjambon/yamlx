@@ -207,6 +207,19 @@ let default_expansion_limit = Types.default_expansion_limit
 let default_max_depth = Types.default_max_depth
 
 (* ------------------------------------------------------------------ *)
+(* Value location                                                        *)
+(* ------------------------------------------------------------------ *)
+
+let value_loc : value -> loc = function
+  | Null loc
+  | Bool (loc, _)
+  | Int (loc, _)
+  | Float (loc, _)
+  | String (loc, _)
+  | Seq (loc, _)
+  | Map (loc, _) ->
+      loc
+
 (* Error formatting                                                      *)
 (* ------------------------------------------------------------------ *)
 
