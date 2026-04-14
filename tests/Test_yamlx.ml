@@ -338,10 +338,8 @@ let comment_tests () =
     Testo.create ~category:[ "comments" ] "multiple head comments"
       (check "# line 1\n# line 2\nscalar\n" "# line 1\n# line 2\nscalar\n");
     Testo.create ~category:[ "comments" ]
-      "comment on block scalar header not preserved"
-      (* Block scalar header lines are parsed by a dedicated path that does not
-         capture comments; the comment is silently dropped. *)
-      (check "desc: |  # note\n  content\n" "desc: |\n    content\n");
+      "comment on block scalar header is preserved"
+      (check "desc: |  # note\n  content\n" "desc: |  # note\n    content\n");
     Testo.create ~category:[ "comments" ] "line comment on alias"
       (check "a: &x foo\nb: *x  # ref\n" "a: &x foo\nb: *x  # ref\n");
     Testo.create ~category:[ "comments" ]

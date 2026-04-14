@@ -855,14 +855,25 @@ let scan_block_scalar_indicators scn =
     had_white := true
   done;
   let cp = peek scn 0 in
-  if cp = 0x23 (* # *) && !had_white then
-    (* Valid comment preceded by whitespace – skip to EOL *)
+  if cp = 0x23 (* # *) && !had_white then begin
+    (* Valid comment preceded by whitespace – capture it as a line comment on
+       the block scalar's header line so it can be re-emitted by the printer. *)
+    let comment_line = (pos scn).line in
+    let comment_col = (pos scn).column in
+    advance scn 1;
+    (* consume '#' *)
+    let buf = Buffer.create 32 in
     while
       (not (Char_class.is_linebreak (peek scn 0)))
       && peek scn 0 <> Char_class.eof
     do
+      Reader.encode_utf8_to buf (peek scn 0);
       advance scn 1
-    done
+    done;
+    Queue.add
+      (comment_line, comment_col, true, Buffer.contents buf)
+      scn.comments
+  end
   else if not (Char_class.is_linebreak cp || cp = Char_class.eof) then
     Types.scan_error (pos scn)
       "invalid character in block scalar header (only whitespace and a comment \

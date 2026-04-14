@@ -210,6 +210,7 @@ type node =
       height : int;
       head_comments : string list;
       line_comment : string option;
+      foot_comments : string list;
     }
   | Sequence_node of {
       anchor : string option;
@@ -242,6 +243,7 @@ type node =
       height : int;
       head_comments : string list;
       line_comment : string option;
+      foot_comments : string list;
     }
 
 (** {1 Resolved values — Resolver output} *)

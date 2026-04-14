@@ -220,6 +220,7 @@ type node =
       height : int;  (** always 1 for scalars *)
       head_comments : string list;
       line_comment : string option;
+      foot_comments : string list;
     }
   | Sequence_node of {
       anchor : string option;
@@ -253,6 +254,7 @@ type node =
       height : int;  (** always 1 for alias nodes *)
       head_comments : string list;
       line_comment : string option;
+      foot_comments : string list;
     }
 [@@deriving show]
 

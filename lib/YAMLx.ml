@@ -75,6 +75,7 @@ type node = Types.node =
       height : int;
       head_comments : string list;
       line_comment : string option;
+      foot_comments : string list;
     }
   | Sequence_node of {
       anchor : string option;
@@ -105,6 +106,7 @@ type node = Types.node =
       height : int;
       head_comments : string list;
       line_comment : string option;
+      foot_comments : string list;
     }
 [@@deriving show { with_path = false }]
 
@@ -170,10 +172,14 @@ let parse_nodes_versioned ?(max_depth = Types.default_max_depth)
     (input : string) : ((int * int) option * node) list =
   let parser_ = make_pipeline input in
   let composer = Composer.create ~max_depth parser_ in
-  let versioned = Composer.compose_stream composer in
+  let versioned, doc_start_lines =
+    Composer.compose_stream_with_starts composer
+  in
   let raw_comments = Scanner.drain_comments (Parser.get_scanner parser_) in
   let plain_nodes = List.map snd versioned in
-  let attached = Comment_attacher.attach plain_nodes raw_comments in
+  let attached =
+    Comment_attacher.attach ~doc_start_lines plain_nodes raw_comments
+  in
   (* Re-pair version info with the comment-attached nodes (same order). *)
   List.map2 (fun (ver, _) node -> (ver, node)) versioned attached
 
@@ -442,6 +448,7 @@ let make_scalar ?(style = Types.Plain) value : node =
       height = 1;
       head_comments = [];
       line_comment = None;
+      foot_comments = [];
     }
 
 let rec value_to_node : value -> node = function

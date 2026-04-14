@@ -200,9 +200,14 @@ let is_block_collection = function
       and ends with ['\n']. *)
 let rec block_value ~level node =
   match node with
-  | Alias_node { name; line_comment; _ } ->
-      (false, "*" ^ name ^ emit_lc line_comment ^ "\n")
-  | Scalar_node { anchor; tag; value; style; line_comment; _ } ->
+  | Alias_node { name; line_comment; foot_comments; _ } ->
+      let body = "*" ^ name ^ emit_lc line_comment ^ "\n" in
+      let feet =
+        String.concat ""
+          (List_ext.map (fun fc -> "#" ^ fc ^ "\n") foot_comments)
+      in
+      (false, body ^ feet)
+  | Scalar_node { anchor; tag; value; style; line_comment; foot_comments; _ } ->
       let pre = pp_anchor anchor ^ pp_tag tag in
       let body =
         match style with
@@ -214,7 +219,11 @@ let rec block_value ~level node =
         | Literal -> block_scalar ~lc:line_comment "|" value level
         | Folded -> block_scalar ~lc:line_comment ">" value level
       in
-      (false, pre ^ body)
+      let feet =
+        String.concat ""
+          (List_ext.map (fun fc -> "#" ^ fc ^ "\n") foot_comments)
+      in
+      (false, pre ^ body ^ feet)
   | Sequence_node
       { anchor; tag; items; flow = is_flow; line_comment; foot_comments; _ } ->
       let pre = pp_anchor anchor ^ pp_tag tag in

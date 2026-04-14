@@ -104,6 +104,13 @@ let set_lc lc = function
   | Mapping_node r -> Mapping_node { r with line_comment = lc }
   | Alias_node r -> Alias_node { r with line_comment = lc }
 
+(** Set [foot_comments] on a node (scalars, aliases, and collections). *)
+let set_feet feet = function
+  | Scalar_node r -> Scalar_node { r with foot_comments = feet }
+  | Sequence_node r -> Sequence_node { r with foot_comments = feet }
+  | Mapping_node r -> Mapping_node { r with foot_comments = feet }
+  | Alias_node r -> Alias_node { r with foot_comments = feet }
+
 (* ------------------------------------------------------------------ *)
 (* Attachment traversal                                                  *)
 (* ------------------------------------------------------------------ *)
@@ -124,7 +131,8 @@ let rec attach_node cur ~next_line node =
   | Alias_node _ ->
       let lc = take_line_comment nl cur in
       let node = set_lc lc node in
-      node
+      let feet = take_head_before next_line ~min_col:0 cur in
+      set_feet feet node
   | Sequence_node r ->
       (* For a flow sequence or an empty sequence, a same-line comment belongs to
        the sequence node itself.  For a non-empty block sequence the comment on
@@ -165,11 +173,17 @@ let rec attach_node cur ~next_line node =
 
 (** Attach comments to a list of sibling nodes. [parent_next_line] bounds the
     foot-comment zone of the last sibling. *)
-and attach_siblings cur nodes ~parent_next_line =
+and attach_siblings cur nodes ~parent_next_line:_ =
   let arr = Array.of_list nodes in
   let n = Array.length arr in
   for i = 0 to n - 1 do
-    let next = if i + 1 < n then node_line arr.(i + 1) else parent_next_line in
+    (* For the last sibling, use a tight bound (one line past the item itself)
+       rather than parent_next_line.  This prevents the last scalar/alias from
+       consuming trailing comments that belong to the parent collection as foot
+       comments — those are picked up by the parent's own foot-collection step. *)
+    let next =
+      if i + 1 < n then node_line arr.(i + 1) else node_line arr.(i) + 1
+    in
     arr.(i) <- attach_node cur ~next_line:next arr.(i)
   done;
   Array.to_list arr
@@ -187,9 +201,10 @@ and attach_pairs cur pairs ~parent_next_line =
     let key_line = node_line k in
     let value_line = node_line v in
 
-    (* Attach to the key, but hold back the line comment if key and value
-       share the same line — it belongs to the value (the last node there). *)
-    let k' = attach_node cur ~next_line:value_line k in
+    (* Attach to the key with a tight next_line so comments between the key
+       and value are NOT consumed as foot comments of the key — they should
+       become head comments of the value instead. *)
+    let k' = attach_node cur ~next_line:(key_line + 1) k in
     let k', transferred_lc =
       if key_line = value_line then
         (* Strip the line comment we just put on the key and defer it *)
@@ -214,18 +229,29 @@ and attach_pairs cur pairs ~parent_next_line =
 (* ------------------------------------------------------------------ *)
 
 (** Attach [raw_comments] to [docs] and return the annotated node list.
-    [raw_comments] is the [(line, is_line_comment, text)] list returned by
-    {!Scanner.drain_comments}. Documents are treated as top-level siblings; any
-    comments after the last document are discarded. *)
-let attach (docs : node list) (raw_comments : (int * int * bool * string) list)
-    : node list =
+    [raw_comments] is the [(line, col, is_line_comment, text)] list returned by
+    {!Scanner.drain_comments}. [doc_start_lines] is the source line of each
+    document's [Document_start] event (the [---] line for explicit documents, or
+    the first-content line for implicit ones); it is used as the upper bound for
+    foot-comment collection on the preceding document, preventing standalone
+    comments that precede a [---] from being mis-attached as head comments of
+    the next document's root. Comments after the last document are discarded. *)
+let attach ~doc_start_lines (docs : node list)
+    (raw_comments : (int * int * bool * string) list) : node list =
   if raw_comments = [] then docs
   else begin
     let cur = make_cursor raw_comments in
     let arr = Array.of_list docs in
+    let starts = Array.of_list doc_start_lines in
     let n = Array.length arr in
     for i = 0 to n - 1 do
-      let next = if i + 1 < n then node_line arr.(i + 1) else max_int in
+      (* Use the next document's --- line as boundary so that comments between
+         the end of document i and the --- of document i+1 become foot comments
+         of document i rather than head comments of document i+1. *)
+      let next =
+        if i + 1 < n && i + 1 < Array.length starts then starts.(i + 1)
+        else max_int
+      in
       arr.(i) <- attach_node cur ~next_line:next arr.(i)
     done;
     Array.to_list arr

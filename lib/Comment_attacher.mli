@@ -4,7 +4,10 @@
     in the parsed AST. See {!attach} for details. *)
 
 val attach :
-  Types.node list -> (int * int * bool * string) list -> Types.node list
+  doc_start_lines:int list ->
+  Types.node list ->
+  (int * int * bool * string) list ->
+  Types.node list
 (** Attach [raw_comments] to [docs] and return the annotated node list.
 
     [raw_comments] is the [(line, col, is_line_comment, text)] list returned by
