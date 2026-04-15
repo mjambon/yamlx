@@ -1,21 +1,35 @@
 (** Convert a parser event list to the yaml-test-suite tree notation. The tree
     notation is a human-readable, line-by-line representation of the event
-    stream, used by the test suite to specify expected output.
+    stream, used by the test suite to specify expected output. *)
 
-    Notation summary ~~~~~~~~~~~~~~~~ +STR stream start -STR stream end +DOC
-    [---] document start (with or without explicit marker) -DOC [...] document
-    end (with or without explicit marker) +MAP [{}] mapping start (flow=true;
-    optionally &anchor and tag URI) -MAP mapping end +SEQ [[]] sequence start
-    (flow=true; optionally &anchor and tag URI) -SEQ sequence end =VAL [&anchor]
-    [<tag>] STYLE VALUE where STYLE is one of: : plain ' single-quoted
-    double-quote character for double-quoted | literal block > folded block =ALI
-    *name alias
+(*
+    Notation summary
+    ~~~~~~~~~~~~~~~~
+    +STR          stream start
+    -STR          stream end
+    +DOC [---]    document start (with or without explicit marker)
+    -DOC [...]    document end   (with or without explicit marker)
+    +MAP [{}]     mapping start  (flow=true; optionally &anchor and tag URI)
+    -MAP          mapping end
+    +SEQ [[]]     sequence start (flow=true; optionally &anchor and tag URI)
+    -SEQ          sequence end
+    =VAL [&anchor] [<tag>] STYLE VALUE
+                  where STYLE is one of:
+                    :   plain
+                    '   single-quoted
+                    '"' double-quoted
+                    |   literal block
+                    >   folded block
+    =ALI *name    alias
 
-    The VALUE in =VAL lines has special characters escaped: actual newline ->
-    backslash-n actual tab -> backslash-t actual backslash -> double-backslash
+    The VALUE in =VAL lines has special characters escaped:
+      actual newline    -> \n
+      actual tab        -> \t
+      actual backslash  -> \\
 
-    The tree lines in the test suite have leading spaces for visual nesting; we
-    strip those when comparing (see [normalize_tree]). *)
+    The tree lines in the test suite have leading spaces for visual nesting;
+    we strip those when comparing (see [normalize_tree]).
+*)
 
 open Types
 

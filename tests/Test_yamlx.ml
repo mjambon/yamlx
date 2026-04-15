@@ -1,10 +1,13 @@
 (** Main test suite for YAMLx. Runs the standard yaml-test-suite cases plus a
-    handful of hand-written unit tests.
+    handful of hand-written unit tests. *)
 
-    Test strategy ~~~~~~~~~~~~~ Each yaml-test-suite entry specifies either: 1.
-    A [yaml:] input that should parse successfully and produce a known event
-    stream ([tree:] field). 2. A [yaml:] input that should fail to parse
-    ([fail: true]).
+(*
+    Test strategy
+    ~~~~~~~~~~~~~
+    Each yaml-test-suite entry specifies either:
+      1. A [yaml:] input that should parse successfully and produce a known
+         event stream ([tree:] field).
+      2. A [yaml:] input that should fail to parse ([fail: true]).
 
     For case 1 we compare the normalized event tree produced by YAMLx against
     the expected tree from the test file.
@@ -12,8 +15,9 @@
     For case 2 we check that YAMLx raises [Scan_error] or [Parse_error].
 
     The test suite is loaded from the [tests/yaml-test-suite/src/] directory
-    relative to the repository root. The path is hard-coded here for simplicity;
-    adjust if the layout changes. *)
+    relative to the repository root.  The path is hard-coded here for
+    simplicity; adjust if the layout changes.
+*)
 
 (* ------------------------------------------------------------------ *)
 (* Locate the test-suite source directory                                *)
