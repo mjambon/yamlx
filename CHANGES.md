@@ -2,6 +2,12 @@
 
 ### Bug fixes
 
+- Node `loc` fields now exclude trailing whitespace and line terminators
+  ([#27](https://github.com/mjambon/yamlx/issues/27)):
+  - **Plain scalars** (block and flow context): `end_pos` is now right after
+    the last content character, not past trailing spaces or consumed newlines.
+  - **Block scalars** (`|`, `>`): `end_pos` is now at the line terminator of
+    the last content line, not at the start of the next token's line.
 - The `---` document separator is now always emitted on its own line. Previously
   it was followed by a space and the document content on the same line for
   scalar and flow-collection documents, e.g. `--- foo` instead of `---\nfoo`.

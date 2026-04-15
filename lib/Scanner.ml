@@ -888,6 +888,11 @@ let scan_block_scalar scn style =
   let chomp, explicit_indent = scan_block_scalar_indicators scn in
   (* Consume the line break after the header *)
   if Char_class.is_linebreak (peek scn 0) then ignore (scan_line_break scn);
+  (* Tracks the scanner position right after the last content character on the
+     last content line (i.e. right at the trailing newline or EOF of that line).
+     Initialized to the position after the header so that an empty block scalar
+     has a loc that ends right after the indicator character. *)
+  let last_content_pos = ref (pos scn) in
   (* Minimum indentation: at top level (scn.indent = -1) allow content at
      column 0 (min_indent = 0); inside a block, content must exceed its parent. *)
   let min_indent = max 0 (scn.indent + 1) in
@@ -1022,6 +1027,10 @@ let scan_block_scalar scn style =
         Reader.encode_utf8_to content_buf (peek scn 0);
         advance scn 1
       done;
+      (* pos scn is now right at the line terminator (or EOF) following the
+         last character of this content line — record it as the candidate
+         end_pos so trailing newlines are excluded from the token's loc. *)
+      last_content_pos := pos scn;
 
       if peek scn 0 = Char_class.eof then cont := false
       else begin
@@ -1097,7 +1106,7 @@ let scan_block_scalar scn style =
         (* All trailing blank lines preserved; leading included unconditionally *)
         if content = "" then leading else leading ^ content ^ "\n" ^ trailing
   in
-  push_token scn (make_token (Scalar (value, style)) start (pos scn))
+  push_token scn (make_token (Scalar (value, style)) start !last_content_pos)
 
 (* ------------------------------------------------------------------ *)
 (* Flow scalars: single-quoted and double-quoted                        *)
@@ -1446,6 +1455,10 @@ let scan_plain_scalar scn =
   (* minimum column to continue *)
   let in_flow = scn.flow_level > 0 in
   let stop = ref false in
+  (* Track the scanner position right after the last content character, before
+     any trailing whitespace or line terminators are consumed.  This is used as
+     the token's end_pos so that trailing whitespace is excluded from the loc. *)
+  let last_content_pos = ref (pos scn) in
   while not !stop do
     (* Check for termination at current position *)
     let cp0 = peek scn 0 in
@@ -1502,6 +1515,10 @@ let scan_plain_scalar scn =
       let line = Buffer.contents line_buf in
       if line = "" then stop := true
       else begin
+        (* pos scn is now right after the last content character on this line
+           (at the first trailing space, comment marker, or line terminator).
+           Record it so the token's end_pos excludes trailing whitespace. *)
+        last_content_pos := pos scn;
         scn.allow_simple_key <- false;
         Buffer.add_buffer buf spaces;
         Buffer.clear spaces;
@@ -1614,15 +1631,15 @@ let scan_plain_scalar scn =
       end
     end
   done;
-  Buffer.contents buf
+  (Buffer.contents buf, !last_content_pos)
 
 (** Fetch a plain scalar token. *)
 let fetch_plain scn =
   let start = pos scn in
   save_possible_simple_key scn;
   scn.allow_simple_key <- false;
-  let value = scan_plain_scalar scn in
-  push_token scn (make_token (Scalar (value, Plain)) start (pos scn))
+  let value, end_pos = scan_plain_scalar scn in
+  push_token scn (make_token (Scalar (value, Plain)) start end_pos)
 
 (* ------------------------------------------------------------------ *)
 (* Stream start / end                                                    *)

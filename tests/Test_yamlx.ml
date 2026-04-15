@@ -147,6 +147,84 @@ let unit_tests () =
   ]
 
 (* ------------------------------------------------------------------ *)
+(* Source location tests                                                 *)
+(* ------------------------------------------------------------------ *)
+
+(** Check that node locs exclude trailing whitespace and line terminators.
+
+    Each test parses a small YAML snippet, extracts the scalar node of interest,
+    and asserts that its [loc.end_pos] points right after the last content
+    character — not after trailing spaces, line breaks, or the start of the next
+    line. *)
+let loc_tests () =
+  let open YAMLx in
+  (* Extract the [loc] of the first (and only) document root. *)
+  let root_loc yaml =
+    match Nodes.of_yaml_exn yaml with
+    | [ node ] -> (
+        match node with
+        | Scalar_node { loc; _ } -> loc
+        | Mapping_node { loc; _ } -> loc
+        | Sequence_node { loc; _ } -> loc
+        | Alias_node { loc; _ } -> loc)
+    | _ -> failwith "expected exactly one document"
+  in
+  (* Extract the loc of the value scalar in a single-pair mapping. *)
+  let value_loc yaml =
+    match Nodes.of_yaml_exn yaml with
+    | [ Mapping_node { pairs = [ (_, v) ]; _ } ] -> (
+        match v with
+        | Scalar_node { loc; _ } -> loc
+        | _ -> failwith "expected scalar value")
+    | _ -> failwith "expected single-pair mapping"
+  in
+  let check_end name yaml get_loc expected_line expected_col expected_offset =
+    Testo.create ~category:[ "loc" ] name (fun () ->
+        let (loc : YAMLx.loc) = get_loc yaml in
+        let e = loc.end_pos in
+        if
+          e.line <> expected_line || e.column <> expected_col
+          || e.offset <> expected_offset
+        then
+          failwith
+            (Printf.sprintf
+               "expected end_pos {line=%d col=%d offset=%d}, got {line=%d \
+                col=%d offset=%d}"
+               expected_line expected_col expected_offset e.line e.column
+               e.offset))
+  in
+  [
+    (* Plain scalar at top level: trailing newline must not be in loc *)
+    check_end "plain scalar: end_pos excludes trailing newline" "a\n" root_loc 1
+      1 1;
+    (* Plain scalar in flow sequence: trailing space must not be in loc *)
+    check_end "plain scalar in flow: end_pos excludes trailing space" "[ a ]\n"
+      (fun yaml ->
+        match Nodes.of_yaml_exn yaml with
+        | [ Sequence_node { items = [ Scalar_node { loc; _ } ]; _ } ] -> loc
+        | _ -> failwith "expected flow sequence with one scalar")
+      1 3 3;
+    (* Multiline plain scalar: end_pos is right after the last content char *)
+    check_end "multiline plain scalar: end_pos on last content line"
+      "foo\nbar\n" root_loc 2 3 7;
+    (* Block literal scalar: end_pos is right at the newline ending the last
+       content line, not at the start of the next line *)
+    check_end "block literal scalar: end_pos excludes trailing newline"
+      "desc: |\n  content\n" value_loc 2 9 17;
+    (* Block scalar with strip chomp *)
+    check_end "block scalar strip: end_pos excludes trailing newline"
+      "desc: |-\n  content\n" value_loc 2 9 18;
+    (* Plain scalar in mapping key: end right after key *)
+    check_end "mapping key: end_pos excludes trailing colon/space"
+      "key: value\n"
+      (fun yaml ->
+        match Nodes.of_yaml_exn yaml with
+        | [ Mapping_node { pairs = [ (Scalar_node { loc; _ }, _) ]; _ } ] -> loc
+        | _ -> failwith "expected mapping key")
+      1 3 3;
+  ]
+
+(* ------------------------------------------------------------------ *)
 (* Encoding detection tests                                              *)
 (* ------------------------------------------------------------------ *)
 
@@ -1310,9 +1388,9 @@ let cycle_tests () =
 let () =
   YAMLx.register_exception_printers ();
   Testo.interpret_argv ~project_name:"yamlx" (fun _tags ->
-      unit_tests () @ encoding_tests () @ roundtrip_tests () @ comment_tests ()
-      @ comment_node_tests () @ anchor_tests () @ printer_tests ()
-      @ expansion_limit_tests () @ depth_limit_tests () @ performance_tests ()
-      @ conversion_tests () @ duplicate_key_tests () @ yaml_1_1_tests ()
-      @ plain_mode_tests () @ strict_keys_tests () @ cycle_tests ()
-      @ suite_tests ())
+      unit_tests () @ loc_tests () @ encoding_tests () @ roundtrip_tests ()
+      @ comment_tests () @ comment_node_tests () @ anchor_tests ()
+      @ printer_tests () @ expansion_limit_tests () @ depth_limit_tests ()
+      @ performance_tests () @ conversion_tests () @ duplicate_key_tests ()
+      @ yaml_1_1_tests () @ plain_mode_tests () @ strict_keys_tests ()
+      @ cycle_tests () @ suite_tests ())
