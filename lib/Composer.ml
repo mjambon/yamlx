@@ -76,6 +76,7 @@ let rec compose_node (c : t) ~(depth : int) : node =
               height = 1;
               head_comments = [];
               line_comment = None;
+              foot_comments = [];
             }
       | None -> Types.parse_error ev.start_pos "undefined alias '*%s'" name)
   | Scalar { anchor; tag; value; style } ->
@@ -91,6 +92,7 @@ let rec compose_node (c : t) ~(depth : int) : node =
             height = 1;
             head_comments = [];
             line_comment = None;
+            foot_comments = [];
           }
       in
       fill_anchor cell node;
@@ -198,13 +200,15 @@ let compose_document (c : t) : (int * int) option * node =
 (** Compose all documents in a YAML stream. Returns one [(version, node)] pair
     per document, where [version] is the value of the [%YAML] directive if
     present. *)
-let compose_stream (c : t) : ((int * int) option * node) list =
+let compose_stream_with_starts (c : t) :
+    ((int * int) option * node) list * int list =
   (* Consume STREAM_START *)
   let start_ev = get_ev c in
   (match start_ev.kind with
   | Stream_start -> ()
   | _ -> Types.parse_error start_ev.start_pos "expected STREAM_START");
   let docs = ref [] in
+  let doc_start_lines = ref [] in
   let stop = ref false in
   while not !stop do
     let next = Parser.peek_event c.parser_ in
@@ -212,8 +216,16 @@ let compose_stream (c : t) : ((int * int) option * node) list =
     | Stream_end ->
         ignore (get_ev c);
         stop := true
-    | Document_start _ -> docs := compose_document c :: !docs
+    | Document_start _ ->
+        doc_start_lines := next.start_pos.line :: !doc_start_lines;
+        docs := compose_document c :: !docs
     | _ ->
         Types.parse_error next.start_pos "expected DOCUMENT_START or STREAM_END"
   done;
-  List.rev !docs
+  (List.rev !docs, List.rev !doc_start_lines)
+
+(** Compose all documents in a YAML stream. Returns one [(version, node)] pair
+    per document, where [version] is the value of the [%YAML] directive if
+    present. *)
+let compose_stream (c : t) : ((int * int) option * node) list =
+  fst (compose_stream_with_starts c)

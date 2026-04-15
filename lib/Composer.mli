@@ -18,3 +18,10 @@ val compose_stream : t -> ((int * int) option * Types.node) list
     [STREAM_END] and returns one [(version, node)] pair per document, where
     [version] is the value of the [%YAML] directive (e.g. [(1, 1)] for
     [%YAML 1.1]) if present in that document. *)
+
+val compose_stream_with_starts :
+  t -> ((int * int) option * Types.node) list * int list
+(** Like {!compose_stream} but also returns the source line of each
+    [Document_start] event (the [---] line, or the implicit start line for
+    documents without an explicit marker). Used internally for comment
+    attachment. *)
