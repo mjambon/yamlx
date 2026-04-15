@@ -1,6 +1,6 @@
 ## Unreleased
 
-### Comment attachment improvements
+### Comment attachment improvements ([#20](https://github.com/mjambon/yamlx/issues/20))
 
 - Comments between a mapping key and its value (when the value starts on the
   next line) are now correctly attached as `head_comments` of the value node.
