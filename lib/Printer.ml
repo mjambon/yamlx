@@ -414,22 +414,16 @@ let to_yaml (docs : node list) : string =
   List.iteri
     (fun i doc ->
       let heads = emit_heads ~level:0 (node_head_comments doc) in
-      let nl, content = block_value ~level:0 doc in
+      let _nl, content = block_value ~level:0 doc in
       if i = 0 then begin
         (* First document: no separator marker needed *)
         Buffer.add_string b heads;
         Buffer.add_string b content
       end
-      else if nl then begin
-        (* Subsequent document, block collection *)
+      else begin
+        (* Subsequent document: always put --- on its own line *)
         Buffer.add_string b heads;
         Buffer.add_string b "---\n";
-        Buffer.add_string b content
-      end
-      else begin
-        (* Subsequent document, inline value *)
-        Buffer.add_string b heads;
-        Buffer.add_string b "--- ";
         Buffer.add_string b content
       end)
     docs;

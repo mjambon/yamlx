@@ -781,7 +781,7 @@ let printer_tests () =
     (* Multi-document *)
     Testo.create ~category:[ "printer" ]
       "multi-document: second gets --- marker"
-      (check "foo\n---\nbar\n" "foo\n--- bar\n");
+      (check "foo\n---\nbar\n" "foo\n---\nbar\n");
     Testo.create ~category:[ "printer" ]
       "multi-document: block collection gets own line after ---"
       (check "foo\n---\na: 1\n" "foo\n---\na: 1\n");

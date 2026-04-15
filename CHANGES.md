@@ -1,5 +1,12 @@
 ## Unreleased
 
+### Bug fixes
+
+- The `---` document separator is now always emitted on its own line. Previously
+  it was followed by a space and the document content on the same line for
+  scalar and flow-collection documents, e.g. `--- foo` instead of `---\nfoo`.
+  ([#25](https://github.com/mjambon/yamlx/issues/25))
+
 ### Comment attachment improvements ([#20](https://github.com/mjambon/yamlx/issues/20))
 
 - Comments between a mapping key and its value (when the value starts on the
