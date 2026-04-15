@@ -1,21 +1,27 @@
 (** YAML 1.2 parser. Transforms the token stream from the Scanner into an event
     stream. The parser implements a recursive-descent grammar matching the YAML
-    1.2.2 specification.
+    1.2.2 specification. *)
 
-    Grammar summary (tokens → events) ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ stream
-    ::= STREAM_START doc* STREAM_END doc ::= DIRECTIVE* DOCUMENT_START node?
-    DOCUMENT_END? node ::= ALIAS | properties? (block_content | flow_content)
-    properties ::= TAG ANCHOR? | ANCHOR TAG? block_content ::= block_collection
-    | scalar flow_content ::= flow_collection | scalar block_collection ::=
-    block_sequence | block_mapping flow_collection ::= flow_sequence |
-    flow_mapping block_sequence ::= BLOCK_SEQ_START (BLOCK_ENTRY node?)*
-    BLOCK_END block_mapping ::= BLOCK_MAP_START ((KEY node?)? (VALUE node?)?)*
-    BLOCK_END flow_sequence ::= FLOW_SEQ_START (flow_seq_entry FLOW_ENTRY?)*
-    FLOW_SEQ_END flow_mapping ::= FLOW_MAP_START (flow_map_entry FLOW_ENTRY?)*
-    FLOW_MAP_END
+(*
+    Grammar summary (tokens → events)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+             stream ::= STREAM_START doc* STREAM_END
+                doc ::= DIRECTIVE* DOCUMENT_START node? DOCUMENT_END?
+               node ::= ALIAS | properties? (block_content | flow_content)
+         properties ::= TAG ANCHOR? | ANCHOR TAG?
+      block_content ::= block_collection | scalar
+       flow_content ::= flow_collection | scalar
+   block_collection ::= block_sequence | block_mapping
+    flow_collection ::= flow_sequence | flow_mapping
+     block_sequence ::= BLOCK_SEQ_START (BLOCK_ENTRY node?)* BLOCK_END
+      block_mapping ::= BLOCK_MAP_START ((KEY node?)? (VALUE node?)?)* BLOCK_END
+      flow_sequence ::= FLOW_SEQ_START (flow_seq_entry FLOW_ENTRY?)* FLOW_SEQ_END
+       flow_mapping ::= FLOW_MAP_START (flow_map_entry FLOW_ENTRY?)* FLOW_MAP_END
 
     The parser is implemented as a state machine. [next_event] drives it one
-    step at a time, returning one event per call. *)
+    step at a time, returning one event per call.
+*)
 
 open Types
 
