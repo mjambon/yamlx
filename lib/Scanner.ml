@@ -1,26 +1,34 @@
 (** YAML 1.2 scanner (tokenizer). Transforms a character stream (Reader) into a
     token stream consumed by the Parser. This is by far the most complex module
-    in the library.
+    in the library. *)
 
-    Architecture ~~~~~~~~~~~~ The scanner maintains a *token queue* of buffered
-    tokens not yet delivered to the parser. Tokens are produced lazily:
-    [get_token] calls [fetch_more_tokens] as needed, which dispatches on the
-    current character and appends one or more tokens to the queue.
+(*
+    Architecture
+    ~~~~~~~~~~~~
+    The scanner maintains a *token queue* of buffered tokens not yet delivered
+    to the parser.  Tokens are produced lazily: [get_token] calls
+    [fetch_more_tokens] as needed, which dispatches on the current character
+    and appends one or more tokens to the queue.
 
-    Indentation ~~~~~~~~~~~ Block collections (sequences and mappings) are
-    delimited by indentation rather than explicit brackets. The scanner tracks
-    the current indent level and emits synthetic BLOCK_SEQUENCE_START,
-    BLOCK_MAPPING_START, and BLOCK_END tokens when indentation changes.
+    Indentation
+    ~~~~~~~~~~~
+    Block collections (sequences and mappings) are delimited by indentation
+    rather than explicit brackets.  The scanner tracks the current indent level
+    and emits synthetic BLOCK_SEQUENCE_START, BLOCK_MAPPING_START, and
+    BLOCK_END tokens when indentation changes.
 
-    Simple keys ~~~~~~~~~~~ YAML allows implicit mapping keys: [foo: bar] where
-    [foo] is a key without a leading [?] marker. When the scanner emits a scalar
-    (or anchor, alias, or flow collection start) it saves a 'possible simple
-    key' entry for the current flow level. If a [:] is later seen, the saved
-    entry is confirmed and a KEY token (plus BLOCK_MAPPING_START if needed) is
-    retroactively inserted before the scalar. Otherwise the entry expires.
+    Simple keys
+    ~~~~~~~~~~~
+    YAML allows implicit mapping keys: [foo: bar] where [foo] is a key without
+    a leading [?] marker.  When the scanner emits a scalar (or anchor, alias,
+    or flow collection start) it saves a 'possible simple key' entry for the
+    current flow level.  If a [:] is later seen, the saved entry is confirmed
+    and a KEY token (plus BLOCK_MAPPING_START if needed) is retroactively
+    inserted before the scalar.  Otherwise the entry expires.
 
     This module follows the algorithm of ruamel-yaml (Python), translated to
-    idiomatic OCaml. Differences from ruamel-yaml are noted inline. *)
+    idiomatic OCaml.  Differences from ruamel-yaml are noted inline.
+*)
 
 open Types
 

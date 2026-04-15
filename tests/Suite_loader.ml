@@ -2,25 +2,42 @@
     its data in YAML format (src/*.yaml), but we cannot use YAMLx itself to
     parse them (it doesn't exist yet when we first run the tests). This module
     is therefore a hand-written, line-based parser that understands the specific
-    subset of YAML used by the test suite.
+    subset of YAML used by the test suite. *)
 
-    File format ~~~~~~~~~~~ Each src/*.yaml file contains a YAML sequence (a
-    list) of test case mappings. Every item looks like:
+(*
+    File format
+    ~~~~~~~~~~~
+    Each src/*.yaml file contains a YAML sequence (a list) of test case
+    mappings.  Every item looks like:
 
-    - name: Short description from: source reference tags: tag1 tag2 yaml: | the
-      yaml input to test tree: | +STR +DOC ... fail: true (only present when the
-      test expects a parse failure)
+      - name: Short description
+        from: source reference
+        tags: tag1 tag2
+        yaml: |
+          the yaml input to test
+        tree: |
+          +STR
+          +DOC
+          ...
+        fail: true   (only present when the test expects a parse failure)
 
-    Block scalar fields ([yaml: |], [tree: |]) are identified by a [: |] suffix;
-    their content is the following lines with exactly 4 spaces of indentation (2
-    for the mapping value, 2 more for content).
+    Block scalar fields ([yaml: |], [tree: |]) are identified by a [: |]
+    suffix; their content is the following lines with exactly 4 spaces of
+    indentation (2 for the mapping value, 2 more for content).
 
-    Special visual characters in the [yaml:] field must be substituted: ␣
-    (U+2423) → space » (U+00BB) → tab —» (U+2014 U+00BB) → tab ——» → tab ———» →
-    tab ← (U+2190) → carriage return ⇔ (U+21D4) → BOM (U+FEFF) ↵ (U+21B5) →
-    empty (marks a blank line; the surrounding newlines already produce the
-    blank line) ∎ (U+220E) → strip the preceding and trailing newline (indicates
-    absence of final newline) *)
+    Special visual characters in the [yaml:] field must be substituted:
+      ␣  (U+2423)        → space
+      »  (U+00BB)        → tab
+      —» (U+2014 U+00BB) → tab
+      ——»                → tab
+      ———»               → tab
+      ←  (U+2190)        → carriage return
+      ⇔  (U+21D4)        → BOM (U+FEFF)
+      ↵  (U+21B5)        → empty (marks a blank line; the surrounding newlines
+                           already produce the blank line)
+      ∎  (U+220E)        → strip the preceding and trailing newline (indicates
+                           absence of final newline)
+*)
 
 (* ------------------------------------------------------------------ *)
 (* Types                                                                 *)

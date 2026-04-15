@@ -2,27 +2,31 @@
 
     After the Composer has built a node tree (with all comment fields empty),
     this module takes the raw comment list collected by the Scanner and attaches
-    each comment to the most appropriate node.
+    each comment to the most appropriate node. *)
 
-    Best-effort semantics ~~~~~~~~~~~~~~~~~~~~~ Comment attachment is a
-    heuristic process and cannot be perfect in all cases. The rules applied are:
+(*
+    Best-effort semantics
+    ~~~~~~~~~~~~~~~~~~~~~
+    Comment attachment is a heuristic process and cannot be perfect in all
+    cases.  The rules applied are:
 
-    - {b Head comments}: standalone comment lines (lines that contain nothing
-      but a comment) that appear immediately before a node are attached as
+    - Head comments: standalone comment lines (lines that contain nothing but a
+      comment) that appear immediately before a node are attached as
       [head_comments] of that node.
 
-    - {b Line comments}: a comment on the same line as a node's start position
-      is attached as [line_comment]. For mapping pairs where key and value start
+    - Line comments: a comment on the same line as a node's start position is
+      attached as [line_comment].  For mapping pairs where key and value start
       on the same line, the line comment is attached to the value (the last node
       on that line), not the key.
 
-    - {b Foot comments}: standalone comment lines that appear after the last
-      child of a collection, before the next sibling, are attached as
-      [foot_comments] of the collection.
+    - Foot comments: standalone comment lines that appear after the last child
+      of a collection, before the next sibling, are attached as [foot_comments]
+      of the collection.
 
-    Comments inside flow collections are not recorded by the Scanner. Comments
-    that cannot be attributed to any node are silently discarded. The behavior
-    is subject to change as the heuristics are refined. *)
+    Comments inside flow collections are not recorded by the Scanner.  Comments
+    that cannot be attributed to any node are silently discarded.  The behavior
+    is subject to change as the heuristics are refined.
+*)
 
 open Types
 
