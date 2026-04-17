@@ -2,9 +2,9 @@
 
 A pure-OCaml YAML 1.2 and 1.1 library with a lossless, comment-preserving AST.
 
-**[API Documentation](https://mjambon.github.io/yamlx/yamlx/YAMLx/)**
-
 This is AI-assisted software, fully owned and maintained by Martin Jambon.
+
+👉 **[API Documentation](https://mjambon.github.io/yamlx/yamlx/YAMLx/)**
 
 ## Features
 
