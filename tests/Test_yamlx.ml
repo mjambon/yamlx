@@ -331,7 +331,7 @@ let encoding_tests () =
 
 type values = YAMLx.value list [@@deriving show { with_path = false }]
 
-let equal_values a b = List.equal YAMLx.equal_value a b
+let equal_values a b = List.equal YAMLx.Value.equal a b
 let yamlx_values = Testo.testable show_values equal_values
 
 (** Round-trip helpers.
@@ -886,7 +886,7 @@ let mk_seq vs = YAMLx.Seq (z, vs)
 let mk_map pairs = YAMLx.Map (z, List.map (fun (k, v) -> (z, k, v)) pairs)
 
 (** [value_rt v] performs the value → nodes → value roundtrip and returns the
-    result. A correct implementation must satisfy [equal_value v (value_rt v)].
+    result. A correct implementation must satisfy [Value.equal v (value_rt v)].
 *)
 let value_rt v =
   let nodes = YAMLx.Values.to_nodes [ v ] in
@@ -1042,7 +1042,7 @@ let duplicate_key_tests () =
   let keys pairs = List.map (fun (_, k, _) -> k) pairs in
   let value_of key pairs =
     List.find_map
-      (fun (_, k, v) -> if YAMLx.equal_value k key then Some v else None)
+      (fun (_, k, v) -> if YAMLx.Value.equal k key then Some v else None)
       pairs
   in
   [
@@ -1220,7 +1220,7 @@ let yaml_1_1_tests () =
                 let has_merge =
                   List.exists
                     (fun (_, k, _) ->
-                      YAMLx.equal_value k (YAMLx.String (z, "<<")))
+                      YAMLx.Value.equal k (YAMLx.String (z, "<<")))
                     pairs
                 in
                 if not has_merge then failwith "<< key missing in 1.2 result"

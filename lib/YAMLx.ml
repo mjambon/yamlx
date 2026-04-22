@@ -642,6 +642,15 @@ module Values = struct
   let to_yaml_file path values = write_file path (to_yaml values)
 end
 
+module Value = struct
+  let of_yaml_exn = Values.one_of_yaml_exn
+  let of_yaml = Values.one_of_yaml
+  let of_yaml_file = Values.one_of_yaml_file
+  let to_yaml v = Values.to_yaml [ v ]
+  let to_yaml_file path v = Values.to_yaml_file path [ v ]
+  let equal = equal_value
+end
+
 (* ------------------------------------------------------------------ *)
 (* Event printing — internal helpers for tests and the CLI tool         *)
 (* ------------------------------------------------------------------ *)

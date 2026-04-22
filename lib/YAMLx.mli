@@ -2,18 +2,18 @@
 
     Typical usage:
     {[
-      (* Read a config file and get a single typed value — most common pattern *)
-      match YAMLx.Values.one_of_yaml_file "config.yaml" with
+      (* Read a single-document config file — most common pattern *)
+      match YAMLx.Value.of_yaml_file "config.yaml" with
       | Ok value  -> (* process value *)
       | Error msg -> (* handle error *)
 
-      (* Parse a YAML string into typed values — safe variant *)
-      match YAMLx.Values.of_yaml "answer: 42\nflag: true" with
+      (* Parse a YAML string into a single typed value — raising variant *)
+      let value = YAMLx.Value.of_yaml_exn "answer: 42\nflag: true"
+
+      (* Multi-document YAML stream *)
+      match YAMLx.Values.of_yaml "doc1\n---\ndoc2" with
       | Ok docs  -> (* process docs *)
       | Error msg -> (* handle error *)
-
-      (* Parse into typed values — raising variant *)
-      let docs = YAMLx.Values.of_yaml_exn "answer: 42\nflag: true"
 
       (* Serialize typed values back to YAML *)
       let yaml = YAMLx.Values.to_yaml docs
@@ -25,8 +25,8 @@
       let yaml = YAMLx.Nodes.to_yaml nodes
     ]}
 
-    All errors are reported by raising {!Error}. Use {!Values.of_yaml} or
-    {!Values.one_of_yaml_file} to get a [result] instead of raising. *)
+    All errors are reported by raising {!Error}. Use {!Value.of_yaml} or
+    {!Value.of_yaml_file} to get a [result] instead of raising. *)
 
 (** {1 Source positions} *)
 
@@ -369,9 +369,9 @@ end
 (** {1 Value operations} *)
 
 val equal_value : value -> value -> bool
-(** Structural equality that ignores source locations. Two values are equal when
-    they represent the same YAML data regardless of where they appear in the
-    source. *)
+[@@deprecated "Use Value.equal instead."]
+(** Structural equality that ignores source locations.
+    @deprecated Use {!Value.equal} instead. *)
 
 (**/**)
 
@@ -380,15 +380,15 @@ val value_height : value -> int
 
 (**/**)
 
-(** Operations on typed YAML values.
+(** Operations on typed YAML values for multi-document streams.
 
-    [Values] is the most convenient interface for reading and writing plain YAML
-    data. It resolves YAML scalars to typed OCaml values ({!Null}, {!Bool},
-    {!Int}, {!Float}, {!String}, {!Seq}, {!Map}) and can serialize those values
-    back to YAML. The default schema is YAML 1.2; pass [~schema:Yaml_1_1] for
-    legacy files. For round-tripping use {!Values.of_yaml_exn} /
-    {!Values.to_yaml}; for single-document config files use
-    {!Values.one_of_yaml_file}. *)
+    A YAML file may contain multiple documents separated by [---] markers.
+    [Values] handles all of them at once, returning one {!value} per document.
+    For the common case of a single-document config file, prefer {!Value}.
+
+    Resolves YAML scalars to typed OCaml values ({!Null}, {!Bool}, {!Int},
+    {!Float}, {!String}, {!Seq}, {!Map}). The default schema is YAML 1.2; pass
+    [~schema:Yaml_1_1] for legacy files. *)
 module Values : sig
   type t = value list
   (** One {!value} per YAML document in the input stream. *)
@@ -502,8 +502,8 @@ module Values : sig
     ?strict_keys:bool ->
     string ->
     (value, string) result
-  (** Like {!one_of_yaml_exn} but returns [Ok v] on success or [Error msg] on
-      any failure, including wrong document count. Does not raise. *)
+  [@@deprecated "Use Value.of_yaml instead."]
+  (** @deprecated Use {!Value.of_yaml} instead. *)
 
   val one_of_yaml_file :
     ?max_depth:int ->
@@ -515,7 +515,8 @@ module Values : sig
     ?strict_keys:bool ->
     string ->
     (value, string) result
-  (** Like {!one_of_yaml} but reads from a file. *)
+  [@@deprecated "Use Value.of_yaml_file instead."]
+  (** @deprecated Use {!Value.of_yaml_file} instead. *)
 
   val one_of_yaml_exn :
     ?max_depth:int ->
@@ -527,9 +528,8 @@ module Values : sig
     ?strict_keys:bool ->
     string ->
     value
-  (** Parse a YAML string expecting exactly one document and return its value.
-      Raises {!Error} [(Document_count_error _)] if the input contains zero or
-      more than one document. Other failures same as {!of_yaml_exn}. *)
+  [@@deprecated "Use Value.of_yaml_exn instead."]
+  (** @deprecated Use {!Value.of_yaml_exn} instead. *)
 
   val to_nodes : t -> node list
   (** Convert typed values back to AST nodes. Each {!value} becomes one {!node}
@@ -553,6 +553,77 @@ module Values : sig
   (** [to_yaml_file path values] serializes values to YAML (via {!to_yaml}) and
       writes the result to [path], overwriting any existing file. Raises
       [Sys_error] on file I/O failure. *)
+end
+
+(** Single-document interface for typed YAML values.
+
+    Most YAML config files contain exactly one document. [Value] provides a
+    simpler interface than {!Values} for this common case: functions return a
+    single {!value} rather than a list, and the [_exn] variants raise on wrong
+    document count just as they do on parse errors.
+
+    [Value] and {!Values} share the same underlying parser and resolver; the
+    only difference is that [Value] functions check that the input contains
+    exactly one document and unwrap the list. *)
+module Value : sig
+  val of_yaml :
+    ?file:string ->
+    ?max_depth:int ->
+    ?expansion_limit:int ->
+    ?schema:schema ->
+    ?strict_schema:bool ->
+    ?reject_ambiguous:bool ->
+    ?plain:bool ->
+    ?strict_keys:bool ->
+    string ->
+    (value, string) result
+  (** Parse a YAML string that must contain exactly one document and return its
+      typed value. Returns [Ok v] on success or [Error msg] on any failure,
+      including zero or more than one document. Does not raise. [~file] is
+      prepended to error messages. Options are the same as {!Values.of_yaml}. *)
+
+  val of_yaml_exn :
+    ?max_depth:int ->
+    ?expansion_limit:int ->
+    ?schema:schema ->
+    ?strict_schema:bool ->
+    ?reject_ambiguous:bool ->
+    ?plain:bool ->
+    ?strict_keys:bool ->
+    string ->
+    value
+  (** Parse a YAML string expecting exactly one document and return its typed
+      value. Raises {!Error} [(Document_count_error _)] if the input contains
+      zero or more than one document. Other failures same as
+      {!Values.of_yaml_exn}. *)
+
+  val of_yaml_file :
+    ?max_depth:int ->
+    ?expansion_limit:int ->
+    ?schema:schema ->
+    ?strict_schema:bool ->
+    ?reject_ambiguous:bool ->
+    ?plain:bool ->
+    ?strict_keys:bool ->
+    string ->
+    (value, string) result
+  (** Like {!of_yaml} but reads the YAML from the file at the given path.
+      File-read errors and wrong document count are returned as [Error msg]. The
+      file path is automatically prepended to all error messages. *)
+
+  val to_yaml : value -> string
+  (** Serialize a single typed value to a YAML string. Equivalent to
+      [Values.to_yaml [v]]. Does not raise. *)
+
+  val to_yaml_file : string -> value -> unit
+  (** [to_yaml_file path v] serializes [v] to YAML (via {!to_yaml}) and writes
+      the result to [path], overwriting any existing file. Raises [Sys_error] on
+      file I/O failure. *)
+
+  val equal : value -> value -> bool
+  (** Structural equality that ignores source locations. Two values are equal
+      when they represent the same YAML data regardless of where they appear in
+      the source. *)
 end
 
 (**/**)
