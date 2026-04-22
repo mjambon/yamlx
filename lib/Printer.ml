@@ -67,6 +67,41 @@ let double_quoted_body s =
   "\"" ^ Buffer.contents b ^ "\""
 
 (* ------------------------------------------------------------------ *)
+(* Folded-scalar line wrapping                                           *)
+(* ------------------------------------------------------------------ *)
+
+let fold_width = 70
+
+(** Wrap [s] at word boundaries so lines stay at most [fold_width] bytes. Spaces
+    at wrap points are replaced by newlines. Used when emitting a [Folded] block
+    scalar whose content is a single long prose line. *)
+let word_wrap s =
+  let words = String.split_on_char ' ' s in
+  let b = Buffer.create (String.length s + 8) in
+  let col = ref 0 in
+  let first = ref true in
+  List.iter
+    (fun word ->
+      let wlen = String.length word in
+      if !first then begin
+        Buffer.add_string b word;
+        col := wlen;
+        first := false
+      end
+      else if !col + 1 + wlen > fold_width then begin
+        Buffer.add_char b '\n';
+        Buffer.add_string b word;
+        col := wlen
+      end
+      else begin
+        Buffer.add_char b ' ';
+        Buffer.add_string b word;
+        col := !col + 1 + wlen
+      end)
+    words;
+  Buffer.contents b
+
+(* ------------------------------------------------------------------ *)
 (* Block scalar emission                                                 *)
 (* ------------------------------------------------------------------ *)
 
@@ -217,7 +252,17 @@ let rec block_value ~level node =
         | Double_quoted ->
             double_quoted_body value ^ emit_lc line_comment ^ "\n"
         | Literal -> block_scalar ~lc:line_comment "|" value level
-        | Folded -> block_scalar ~lc:line_comment ">" value level
+        | Folded ->
+            (* Wrap long single-line content so output lines stay near fold_width. *)
+            let content =
+              if
+                String.length value > fold_width
+                && (not (String.contains value '\n'))
+                && String.contains value ' '
+              then word_wrap value
+              else value
+            in
+            block_scalar ~lc:line_comment ">" content level
       in
       let feet =
         String.concat ""

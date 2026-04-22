@@ -964,6 +964,70 @@ let conversion_tests () =
   ]
 
 (* ------------------------------------------------------------------ *)
+(* Block-style selection tests (from Values.to_nodes)                    *)
+(* ------------------------------------------------------------------ *)
+
+(** Test that [Values.to_nodes] picks the right scalar style for strings, and
+    that the value round-trip through YAML serialisation is correct. *)
+let block_style_tests () =
+  (* A long safe string with internal newlines should produce Literal style. *)
+  let long_multiline =
+    "This is the first line of a fairly long YAML string value.\n"
+    ^ "This second line pushes the content well past the threshold."
+  in
+  (* A long prose string with spaces (and no newlines) → Folded. *)
+  let long_prose =
+    "This is a long prose string that contains many spaces and will \
+     comfortably exceed the seventy-character threshold for block scalar \
+     selection."
+  in
+  (* A short string that stays on one line → no change in behaviour. *)
+  let short = "hello world" in
+  let check_style label s expected_style =
+    Testo.create ~category:[ "block-style" ] ("style for " ^ label) (fun () ->
+        let node = List.hd (YAMLx.Values.to_nodes [ YAMLx.String (z, s) ]) in
+        match node with
+        | YAMLx.Scalar_node { style; _ } ->
+            if style <> expected_style then
+              failwith
+                (Printf.sprintf "expected %s, got %s"
+                   (YAMLx.show_scalar_style expected_style)
+                   (YAMLx.show_scalar_style style))
+        | _ -> failwith "expected Scalar_node")
+  in
+  let check_rt label s =
+    Testo.create ~category:[ "block-style" ] ("round-trip for " ^ label)
+      (fun () ->
+        let v = value_rt (YAMLx.String (z, s)) in
+        Testo.(check yamlx_values) [ YAMLx.String (z, s) ] [ v ])
+  in
+  [
+    check_style "long multiline string" long_multiline YAMLx.Literal;
+    check_style "long prose string" long_prose YAMLx.Folded;
+    check_style "short string" short YAMLx.Plain;
+    check_rt "long multiline string" long_multiline;
+    check_rt "long prose string" long_prose;
+    check_rt "short string" short;
+    (* A string with only trailing newlines should NOT use Literal. *)
+    check_style "trailing-newline-only string (short)" "short\n"
+      YAMLx.Double_quoted;
+    (* A long string with no spaces and no newlines stays plain. *)
+    check_style "long plain string" (String.make 80 'a') YAMLx.Plain;
+    (* A long string with spaces AND a control character must NOT use Folded
+       because is_safe_for_folded rejects control characters. *)
+    Testo.create ~category:[ "block-style" ]
+      "long string with control char does not use Folded style" (fun () ->
+        let s = "hello world " ^ String.make 70 'x' ^ "\x01 end" in
+        let node = List.hd (YAMLx.Values.to_nodes [ YAMLx.String (z, s) ]) in
+        match node with
+        | YAMLx.Scalar_node { style = YAMLx.Folded; _ } ->
+            failwith "should not use Folded for string with control char"
+        | YAMLx.Scalar_node { style = YAMLx.Literal; _ } ->
+            failwith "should not use Literal for string with control char"
+        | _ -> ());
+  ]
+
+(* ------------------------------------------------------------------ *)
 (* Duplicate key tests                                                   *)
 (* ------------------------------------------------------------------ *)
 
@@ -1395,6 +1459,6 @@ let () =
       unit_tests () @ loc_tests () @ encoding_tests () @ roundtrip_tests ()
       @ comment_tests () @ comment_node_tests () @ anchor_tests ()
       @ printer_tests () @ expansion_limit_tests () @ depth_limit_tests ()
-      @ performance_tests () @ conversion_tests () @ duplicate_key_tests ()
-      @ yaml_1_1_tests () @ plain_mode_tests () @ strict_keys_tests ()
-      @ cycle_tests () @ suite_tests ())
+      @ performance_tests () @ conversion_tests () @ block_style_tests ()
+      @ duplicate_key_tests () @ yaml_1_1_tests () @ plain_mode_tests ()
+      @ strict_keys_tests () @ cycle_tests () @ suite_tests ())
