@@ -364,6 +364,53 @@ end
 (* Value ↔ Node conversion                                              *)
 (* ------------------------------------------------------------------ *)
 
+(* ------------------------------------------------------------------ *)
+(* String block-style helpers                                           *)
+(* ------------------------------------------------------------------ *)
+
+let block_style_threshold = 70
+
+(** True when [s] contains no C0 control characters except TAB (0x09) and LF
+    (0x0A), and no DEL (0x7F). These are the characters safe to embed in a YAML
+    literal block scalar. *)
+let is_safe_for_literal s =
+  let ok = ref true in
+  String.iter
+    (fun c ->
+      let b = Char.code c in
+      if (b < 0x09 || (b > 0x0A && b < 0x20)) || b = 0x7F then ok := false)
+    s;
+  !ok
+
+(** True when [s] contains only printable characters: no C0 controls (including
+    no LF or TAB), no DEL (0x7F). Safe to embed in a YAML folded block scalar
+    before inserting synthetic line breaks. *)
+let is_safe_for_folded s =
+  let ok = ref true in
+  String.iter
+    (fun c ->
+      let b = Char.code c in
+      if b < 0x20 || b = 0x7F then ok := false)
+    s;
+  !ok
+
+(** True when [s] has at least one LF character that is not trailing. Used to
+    decide whether a literal block style is appropriate. *)
+let has_internal_lf s =
+  let n = String.length s in
+  let i = ref (n - 1) in
+  while !i >= 0 && s.[!i] = '\n' do
+    decr i
+  done;
+  let trail_start = !i + 1 in
+  let found = ref false in
+  let j = ref 0 in
+  while !j < trail_start && not !found do
+    if s.[!j] = '\n' then found := true;
+    incr j
+  done;
+  !found
+
 (** Decide the scalar style for a string value so that it round-trips correctly
     through a YAML parser using the JSON schema. Double-quoted style is used
     whenever the plain representation would be misread as a non-string type or
@@ -422,6 +469,28 @@ let string_scalar_style (s : string) : scalar_style =
       in
       if colon_unsafe || hash_unsafe then Double_quoted else Plain
 
+(** Return the scalar style and content for a [String] value. For long strings
+    with safe characters, may select [Literal] or [Folded] block style and
+    return word-wrapped content. Falls back to {!string_scalar_style} otherwise.
+
+    - Strings longer than {!block_style_threshold} with internal LF and only
+      safe characters → [Literal] (newlines preserved exactly).
+    - Strings longer than {!block_style_threshold} with no LF, at least one
+      internal space, and only printable characters → [Folded] with lines
+      wrapped at ~{!block_style_threshold} characters. *)
+let string_node_content (s : string) : scalar_style * string =
+  let n = String.length s in
+  if n > block_style_threshold then
+    if has_internal_lf s && is_safe_for_literal s then (Literal, s)
+    else if
+      (not (String.contains s '\n'))
+      && is_safe_for_folded s && String.contains s ' '
+      && s.[0] <> ' '
+      && s.[n - 1] <> ' '
+    then (Folded, s) (* word wrapping happens in the printer *)
+    else (string_scalar_style s, s)
+  else (string_scalar_style s, s)
+
 (** Format a float as a YAML-safe plain scalar. *)
 let format_float (f : float) : string =
   if Float.is_nan f then ".nan"
@@ -457,7 +526,9 @@ let rec value_to_node : value -> node = function
   | Bool (_, b) -> make_scalar (if b then "true" else "false")
   | Int (_, n) -> make_scalar (Int64.to_string n)
   | Float (_, f) -> make_scalar (format_float f)
-  | String (_, s) -> make_scalar ~style:(string_scalar_style s) s
+  | String (_, s) ->
+      let style, content = string_node_content s in
+      make_scalar ~style content
   | Seq (_, items) ->
       let ns = List.map value_to_node items in
       let h =

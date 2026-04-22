@@ -15,7 +15,15 @@ open Printf
 (* Output format                                                         *)
 (* ------------------------------------------------------------------ *)
 
-type format = Events | Yaml | Plain | Value | Value_loc | Node | Node_loc
+type format =
+  | Events
+  | Yaml
+  | Plain
+  | Reformat
+  | Value
+  | Value_loc
+  | Node
+  | Node_loc
 
 let format = ref Yaml
 let strict = ref false
@@ -38,6 +46,7 @@ let set_format s =
   | "events" -> format := Events
   | "yaml" -> format := Yaml
   | "plain" -> format := Plain
+  | "reformat" -> format := Reformat
   | "value" -> format := Value
   | "value-loc" -> format := Value_loc
   | "node" -> format := Node
@@ -46,8 +55,8 @@ let set_format s =
       raise
         (Arg.Bad
            (Printf.sprintf
-              "unknown format %S (choose: yaml, plain, events, value, \
-               value-loc, node, node-loc)"
+              "unknown format %S (choose: yaml, plain, reformat, events, \
+               value, value-loc, node, node-loc)"
               other))
 
 let usage_msg =
@@ -62,6 +71,9 @@ let usage_msg =
             (default)
     plain   Simplified YAML — aliases expanded, tags stripped, flow collections
             converted to block; merge keys expanded in YAML 1.1 mode
+    reformat  Normalised YAML — reads input as typed values, then re-serialises.
+            Drops comments, anchors, and tags. Converts flow collections to block.
+            Long strings use literal (|) or folded (>) block style as appropriate.
     value   Typed-value tree: Null / Bool / Int / Float / String / Seq / Map
             Useful for checking how scalars are resolved (e.g. is "1e2" a Float?)
     value-loc  Same as value but with source locations
@@ -308,6 +320,19 @@ let run () =
             YAMLx.catch_errors ?file (fun () ->
                 YAMLx.Nodes.to_plain_yaml_exn ~strict:!strict nodes)
             |> or_die)
+    | Reformat ->
+        (match source with
+          | `Stdin ->
+              YAMLx.Values.of_yaml ~schema:!schema ~strict_schema:!strict_schema
+                ~reject_ambiguous:!reject_ambiguous ~plain:!plain_input
+                ~strict_keys:!strict_keys (read_stdin ())
+          | `File path ->
+              YAMLx.Values.of_yaml_file ~schema:!schema
+                ~strict_schema:!strict_schema
+                ~reject_ambiguous:!reject_ambiguous ~plain:!plain_input
+                ~strict_keys:!strict_keys path)
+        |> Result.map YAMLx.Values.to_yaml
+        |> or_die
     | Value ->
         (match source with
           | `Stdin ->

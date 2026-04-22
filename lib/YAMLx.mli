@@ -533,9 +533,17 @@ module Values : sig
 
   val to_nodes : t -> node list
   (** Convert typed values back to AST nodes. Each {!value} becomes one {!node}
-      document. Scalars are given appropriate styles (e.g. strings that look
-      like YAML keywords are double-quoted). Source locations in the returned
-      nodes are zeroed. *)
+      document. Source locations in the returned nodes are zeroed.
+
+      String scalars are styled as follows:
+      - Strings that look like YAML keywords ([null], [true], numbers) →
+        double-quoted.
+      - Strings longer than 70 characters with internal newlines and only safe
+        characters → [Literal] block style ([|] or [|-]).
+      - Strings longer than 70 characters with spaces but no newlines and only
+        printable characters → [Folded] block style ([>] or [>-]), with line
+        breaks inserted at word boundaries to keep lines near 70 characters.
+      - Everything else → [Plain] or [Double_quoted]. *)
 
   val to_yaml : t -> string
   (** Serialize typed values to a YAML string. Equivalent to
