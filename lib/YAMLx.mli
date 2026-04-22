@@ -284,14 +284,10 @@ type value =
   | String of loc * string
   | Seq of loc * value list
   | Map of loc * (loc * value * value) list
-
-val pp_value : Format.formatter -> value -> unit
-[@@deprecated "Use Value.pp instead."]
-(** @deprecated Use {!Value.pp} instead. *)
-
-val show_value : value -> string
-[@@deprecated "Use Value.show instead."]
-(** @deprecated Use {!Value.show} instead. *)
+[@@deriving show]
+(** [pp_value] and [show_value] are derived by [@@deriving show] and are
+    primarily useful when another type embeds {!value} and also uses
+    [@@deriving show]. For direct use prefer {!Value.pp} and {!Value.show}. *)
 
 val value_loc : value -> loc
 [@@deprecated "Use Value.loc instead."]
