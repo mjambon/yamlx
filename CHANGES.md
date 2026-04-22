@@ -16,7 +16,7 @@
     use by `[@@deriving show]` on types that embed `value`).
   - `Value.loc`: extract the source location from any value constructor.
   The `Values.one_of_yaml` / `one_of_yaml_exn` / `one_of_yaml_file` functions
-  and `YAMLx.equal_value` and `YAMLx.value_loc` are now deprecated in favour
+  and `YAMLx.equal_value` and `YAMLx.value_loc` are now deprecated in favor
   of their `Value.*` equivalents.
 
 - **Block scalar heuristics for `Values.to_nodes` / `Values.to_yaml`**
