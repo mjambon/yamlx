@@ -71,7 +71,7 @@ let usage_msg =
             (default)
     plain   Simplified YAML — aliases expanded, tags stripped, flow collections
             converted to block; merge keys expanded in YAML 1.1 mode
-    reformat  Normalised YAML — reads input as typed values, then re-serialises.
+    reformat  Normalized YAML — reads input as typed values, then re-serialises.
             Drops comments, anchors, and tags. Converts flow collections to block.
             Long strings use literal (|) or folded (>) block style as appropriate.
     value   Typed-value tree: Null / Bool / Int / Float / String / Seq / Map
