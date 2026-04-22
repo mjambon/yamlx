@@ -649,6 +649,10 @@ module Value = struct
   let to_yaml v = Values.to_yaml [ v ]
   let to_yaml_file path v = Values.to_yaml_file path [ v ]
   let equal = equal_value
+  let compare = Types.compare_value
+  let pp = pp_value
+  let show = show_value
+  let loc = value_loc
 end
 
 (* ------------------------------------------------------------------ *)

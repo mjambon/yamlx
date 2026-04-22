@@ -10,9 +10,12 @@
   - `Value.of_yaml_file`: read and parse a file expecting one document.
   - `Value.to_yaml` / `to_yaml_file`: serialise a single value back to YAML.
   - `Value.equal`: structural equality ignoring source locations.
+  - `Value.compare`: total order on values ignoring source locations.
+  - `Value.pp` / `Value.show`: pretty-printer and string renderer.
+  - `Value.loc`: extract the source location from any value constructor.
   The `Values.one_of_yaml` / `one_of_yaml_exn` / `one_of_yaml_file` functions
-  and `YAMLx.equal_value` are now deprecated in favour of their `Value.*`
-  equivalents.
+  and `YAMLx.equal_value`, `pp_value`, `show_value`, `value_loc` are now
+  deprecated in favour of their `Value.*` equivalents.
 
 - **Block scalar heuristics for `Values.to_nodes` / `Values.to_yaml`**
   ([#30](https://github.com/mjambon/yamlx/issues/30)).

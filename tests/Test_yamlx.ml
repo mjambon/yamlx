@@ -329,8 +329,14 @@ let encoding_tests () =
 (* Round-trip tests                                                       *)
 (* ------------------------------------------------------------------ *)
 
-type values = YAMLx.value list [@@deriving show { with_path = false }]
+let pp_values fmt vs =
+  Format.fprintf fmt "[%a]"
+    (Format.pp_print_list
+       ~pp_sep:(fun f () -> Format.pp_print_string f "; ")
+       YAMLx.Value.pp)
+    vs
 
+let show_values vs = Format.asprintf "%a" pp_values vs
 let equal_values a b = List.equal YAMLx.Value.equal a b
 let yamlx_values = Testo.testable show_values equal_values
 
