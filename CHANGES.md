@@ -1,3 +1,37 @@
+## Unreleased
+
+### New features
+
+- **`Value` submodule** — single-document interface for typed YAML values
+  ([#32](https://github.com/mjambon/yamlx/issues/32)).
+  Most config files contain exactly one YAML document; the new `Value` module
+  provides a cleaner API for this common case:
+  - `Value.of_yaml` / `of_yaml_exn`: parse a string expecting one document.
+  - `Value.of_yaml_file`: read and parse a file expecting one document.
+  - `Value.to_yaml` / `to_yaml_file`: serialise a single value back to YAML.
+  - `Value.equal`: structural equality ignoring source locations.
+  The `Values.one_of_yaml` / `one_of_yaml_exn` / `one_of_yaml_file` functions
+  and `YAMLx.equal_value` are now deprecated in favour of their `Value.*`
+  equivalents.
+
+- **Block scalar heuristics for `Values.to_nodes` / `Values.to_yaml`**
+  ([#30](https://github.com/mjambon/yamlx/issues/30)).
+  String values longer than 70 characters are now serialised using block
+  scalar styles where appropriate:
+  - Strings with internal newlines and only safe characters → literal block
+    (`|` or `|-`), preserving newlines exactly.
+  - Single-line strings with spaces and only printable characters → folded
+    block (`>` or `>-`), with lines wrapped at approximately 70 characters.
+  - Short strings and strings containing control characters continue to use
+    `Plain` or `Double_quoted` as before.
+
+- **`reformat` output format** for the `yamlx` CLI
+  ([#30](https://github.com/mjambon/yamlx/issues/30)).
+  `yamlx -f reformat` reads the input through the typed-value layer (dropping
+  comments, anchors, and tags) and re-serialises using the block scalar
+  heuristics above. This produces a normalised, human-readable YAML output
+  from any conforming input.
+
 ## 0.2.0 (2026-04-20)
 
 ### Bug fixes
