@@ -303,6 +303,68 @@ val node_height : node -> int
 
 (**/**)
 
+(** Operations on the lossless AST node representation.
+
+    Use [Nodes] when you need full fidelity: tags, anchors, scalar styles,
+    source positions, or comment preservation. For plain data extraction and
+    round-tripping typed values, {!Values} is simpler. *)
+module Nodes : sig
+  type t = node list
+  (** One {!node} per YAML document in the input stream. *)
+
+  val of_yaml : ?file:string -> ?max_depth:int -> string -> (t, string) result
+  (** Like {!of_yaml_exn} but returns [Ok nodes] on success or [Error msg] on
+      any failure. Does not raise. [~file] is prepended to error messages (see
+      {!catch_errors}). *)
+
+  val of_yaml_file : ?max_depth:int -> string -> (t, string) result
+  (** Like {!of_yaml} but reads the YAML from the file at the given path.
+      File-read errors are returned as [Error msg]. The file path is
+      automatically prepended to all error messages. *)
+
+  val of_yaml_exn : ?max_depth:int -> string -> t
+  (** Parse a YAML string and return one node per document. Use this when you
+      need tags, anchors, scalar styles, source positions, or comments. For
+      plain data extraction prefer {!Values.of_yaml_exn}.
+
+      Raises {!Error} [(Scan_error _)] on invalid YAML syntax, [(Parse_error _)]
+      on a malformed token stream, [(Depth_limit_exceeded _)] when nesting
+      exceeds [max_depth] (default: {!default_max_depth}). *)
+
+  val to_yaml : t -> string
+  (** Serialize nodes back to a YAML string. Scalar styles and flow/block mode
+      are preserved. The output round-trips through {!of_yaml_exn} to equivalent
+      nodes. Does not raise. *)
+
+  val to_yaml_file : string -> t -> unit
+  (** [to_yaml_file path nodes] serializes nodes to YAML (via {!to_yaml}) and
+      writes the result to [path], overwriting any existing file. Raises
+      [Sys_error] on file I/O failure. *)
+
+  val to_plain_yaml_exn : ?strict:bool -> ?expansion_limit:int -> t -> string
+  (** Like {!to_yaml} but produces a plain subset of YAML:
+      - Aliases are expanded; anchor declarations are stripped.
+      - Tags are stripped unless [~strict:true], in which case they raise
+        {!Error} [(Printer_error _)].
+      - Complex (non-scalar) mapping keys raise {!Error} [(Printer_error _)].
+      - Flow collections are converted to block style.
+
+      Raises {!Error} [(Expansion_limit_exceeded _)] when alias expansion
+      exceeds [expansion_limit] (default: {!default_expansion_limit}). *)
+
+  val to_plain_yaml_file :
+    ?strict:bool -> ?expansion_limit:int -> string -> t -> (unit, string) result
+  (** [to_plain_yaml_file path nodes] serializes nodes to plain YAML (via
+      {!to_plain_yaml_exn}) and writes the result to [path], overwriting any
+      existing file. Returns [Error msg] on serialization failure (same errors
+      as {!to_plain_yaml_exn}). Raises [Sys_error] on file I/O failure. *)
+
+  val has_comments : t -> bool
+  (** [has_comments nodes] is [true] if any node in the list (one per document)
+      contains a comment. Equivalent to [List.exists Node.has_comments nodes].
+  *)
+end
+
 (** Operations on a single lossless AST node.
 
     [Node] provides the single-node interface analogous to {!Value}: a [type t]
@@ -365,68 +427,6 @@ module Node : sig
 
   val show : t -> string
   (** Return a human-readable representation of a node as a string. *)
-end
-
-(** Operations on the lossless AST node representation.
-
-    Use [Nodes] when you need full fidelity: tags, anchors, scalar styles,
-    source positions, or comment preservation. For plain data extraction and
-    round-tripping typed values, {!Values} is simpler. *)
-module Nodes : sig
-  type t = node list
-  (** One {!node} per YAML document in the input stream. *)
-
-  val of_yaml : ?file:string -> ?max_depth:int -> string -> (t, string) result
-  (** Like {!of_yaml_exn} but returns [Ok nodes] on success or [Error msg] on
-      any failure. Does not raise. [~file] is prepended to error messages (see
-      {!catch_errors}). *)
-
-  val of_yaml_file : ?max_depth:int -> string -> (t, string) result
-  (** Like {!of_yaml} but reads the YAML from the file at the given path.
-      File-read errors are returned as [Error msg]. The file path is
-      automatically prepended to all error messages. *)
-
-  val of_yaml_exn : ?max_depth:int -> string -> t
-  (** Parse a YAML string and return one node per document. Use this when you
-      need tags, anchors, scalar styles, source positions, or comments. For
-      plain data extraction prefer {!Values.of_yaml_exn}.
-
-      Raises {!Error} [(Scan_error _)] on invalid YAML syntax, [(Parse_error _)]
-      on a malformed token stream, [(Depth_limit_exceeded _)] when nesting
-      exceeds [max_depth] (default: {!default_max_depth}). *)
-
-  val to_yaml : t -> string
-  (** Serialize nodes back to a YAML string. Scalar styles and flow/block mode
-      are preserved. The output round-trips through {!of_yaml_exn} to equivalent
-      nodes. Does not raise. *)
-
-  val to_yaml_file : string -> t -> unit
-  (** [to_yaml_file path nodes] serializes nodes to YAML (via {!to_yaml}) and
-      writes the result to [path], overwriting any existing file. Raises
-      [Sys_error] on file I/O failure. *)
-
-  val to_plain_yaml_exn : ?strict:bool -> ?expansion_limit:int -> t -> string
-  (** Like {!to_yaml} but produces a plain subset of YAML:
-      - Aliases are expanded; anchor declarations are stripped.
-      - Tags are stripped unless [~strict:true], in which case they raise
-        {!Error} [(Printer_error _)].
-      - Complex (non-scalar) mapping keys raise {!Error} [(Printer_error _)].
-      - Flow collections are converted to block style.
-
-      Raises {!Error} [(Expansion_limit_exceeded _)] when alias expansion
-      exceeds [expansion_limit] (default: {!default_expansion_limit}). *)
-
-  val to_plain_yaml_file :
-    ?strict:bool -> ?expansion_limit:int -> string -> t -> (unit, string) result
-  (** [to_plain_yaml_file path nodes] serializes nodes to plain YAML (via
-      {!to_plain_yaml_exn}) and writes the result to [path], overwriting any
-      existing file. Returns [Error msg] on serialization failure (same errors
-      as {!to_plain_yaml_exn}). Raises [Sys_error] on file I/O failure. *)
-
-  val has_comments : t -> bool
-  (** [has_comments nodes] is [true] if any node in the list (one per document)
-      contains a comment. Equivalent to [List.exists Node.has_comments nodes].
-  *)
 end
 
 (** {1 Value operations} *)
