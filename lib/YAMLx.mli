@@ -560,6 +560,18 @@ end
     only difference is that [Value] functions check that the input contains
     exactly one document and unwrap the list. *)
 module Value : sig
+  type t = value =
+    | Null of loc
+    | Bool of loc * bool
+    | Int of loc * int64
+    | Float of loc * float
+    | String of loc * string
+    | Seq of loc * t list
+    | Map of loc * (loc * t * t) list
+        (** Alias for {!YAMLx.value}. Exposes the constructors under the [Value]
+            namespace so that, for example, [Value.Null loc] and
+            [YAMLx.Null loc] refer to the same constructor. *)
+
   val of_yaml :
     ?file:string ->
     ?max_depth:int ->
