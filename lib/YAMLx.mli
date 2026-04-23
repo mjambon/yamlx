@@ -274,7 +274,7 @@ type node =
     - Everything else, and all quoted or block scalars → {!String}
 
     Each constructor carries a {!type-loc} giving the source range of the
-    corresponding YAML node. Use {!equal_value} for location-independent
+    corresponding YAML node. Use {!Value.equal} for location-independent
     structural equality. *)
 type value =
   | Null of loc
@@ -285,20 +285,14 @@ type value =
   | Seq of loc * value list
   | Map of loc * (loc * value * value) list
 [@@deriving show]
+(** [pp_value] and [show_value] are derived by [@@deriving show] and are
+    primarily useful when another type embeds {!value} and also uses
+    [@@deriving show]. For direct use prefer {!Value.pp} and {!Value.show}. *)
 
 val value_loc : value -> loc
+[@@deprecated "Use Value.loc instead."]
 (** Return the source location carried by a {!value}.
-
-    Every value constructor stores the location of the corresponding YAML node.
-    This is useful for constructing error messages in pattern-match catch-all
-    arms, for example:
-    {[
-    match x with
-    | Int (_, i) -> i
-    | bad ->
-        ksprintf failwith "%s: expected an int"
-          (bad |> YAMLx.value_loc |> YAMLx.default_format_loc)
-    ]} *)
+    @deprecated Use {!Value.loc} instead. *)
 
 (** {1 Node operations} *)
 
@@ -624,6 +618,33 @@ module Value : sig
   (** Structural equality that ignores source locations. Two values are equal
       when they represent the same YAML data regardless of where they appear in
       the source. *)
+
+  val compare : value -> value -> int
+  (** Total order on values that ignores source locations. Constructor order:
+      [Null < Bool < Int < Float < String < Seq < Map]. Within the same
+      constructor, values are ordered naturally (booleans by [false < true],
+      integers and floats by numeric value, strings lexicographically, sequences
+      and maps lexicographically by element). *)
+
+  val pp : Format.formatter -> value -> unit
+  (** Pretty-printer for use with [Format] and [%a]. Produces the same output as
+      {!show}. *)
+
+  val show : value -> string
+  (** Return a human-readable representation of a {!value} as a string. Useful
+      for debugging and test output. *)
+
+  val loc : value -> loc
+  (** Return the source location carried by a {!value}. Every constructor stores
+      the location of the corresponding YAML node. Useful for building error
+      messages in catch-all match arms:
+      {[
+      match x with
+      | Int (_, i) -> i
+      | bad ->
+          ksprintf failwith "%s: expected an int"
+            (bad |> YAMLx.Value.loc |> YAMLx.format_loc)
+      ]} *)
 end
 
 (**/**)

@@ -368,7 +368,7 @@ let run () =
             let buf = Buffer.create 256 in
             List.iter
               (fun v ->
-                Buffer.add_string buf (YAMLx.show_value v);
+                Buffer.add_string buf (YAMLx.Value.show v);
                 Buffer.add_char buf '\n')
               values;
             Buffer.contents buf)
