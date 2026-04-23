@@ -463,12 +463,12 @@ let comment_tests () =
   ]
 
 (* ------------------------------------------------------------------ *)
-(* has_comments / stream_has_comments tests                              *)
+(* Node.has_comments / Nodes.has_comments tests                          *)
 (* ------------------------------------------------------------------ *)
 
 let has_comments_tests () =
   let parse s = YAMLx.Nodes.of_yaml_exn s in
-  let has s = YAMLx.Nodes.stream_has_comments (parse s) in
+  let has s = YAMLx.Nodes.has_comments (parse s) in
   [
     Testo.create ~category:[ "has-comments" ] "no comments → false" (fun () ->
         assert (not (has "key: value\n")));
@@ -485,13 +485,13 @@ let has_comments_tests () =
       "comment in second document → true" (fun () ->
         assert (has "a: 1\n---\n# doc2\nb: 2\n"));
     Testo.create ~category:[ "has-comments" ]
-      "has_comments on single node without comment → false" (fun () ->
+      "Node.has_comments on single node without comment → false" (fun () ->
         let node = List.hd (parse "plain\n") in
-        assert (not (YAMLx.Nodes.has_comments node)));
+        assert (not (YAMLx.Node.has_comments node)));
     Testo.create ~category:[ "has-comments" ]
-      "has_comments on single node with head comment → true" (fun () ->
+      "Node.has_comments on single node with head comment → true" (fun () ->
         let node = List.hd (parse "# head\nplain\n") in
-        assert (YAMLx.Nodes.has_comments node));
+        assert (YAMLx.Node.has_comments node));
   ]
 
 (* ------------------------------------------------------------------ *)
