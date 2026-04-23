@@ -358,6 +358,17 @@ module Nodes : sig
       {!to_plain_yaml_exn}) and writes the result to [path], overwriting any
       existing file. Returns [Error msg] on serialization failure (same errors
       as {!to_plain_yaml_exn}). Raises [Sys_error] on file I/O failure. *)
+
+  val has_comments : node -> bool
+  (** [has_comments node] is [true] if [node] or any of its descendants carries
+      at least one comment (head, line, or foot). Useful for detecting whether a
+      document would lose information if passed through {!Values.of_yaml_exn},
+      which discards all comments. *)
+
+  val stream_has_comments : t -> bool
+  (** [stream_has_comments nodes] is [true] if any node in the list (one per
+      document) contains a comment. Equivalent to
+      [List.exists has_comments nodes]. *)
 end
 
 (** {1 Value operations} *)

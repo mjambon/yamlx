@@ -358,6 +358,18 @@ module Nodes = struct
     | Ok yaml ->
         write_file path yaml;
         Ok ()
+
+  let rec has_comments = function
+    | Scalar_node n -> n.head_comments <> [] || n.line_comment <> None
+    | Alias_node n -> n.head_comments <> [] || n.line_comment <> None
+    | Sequence_node n ->
+        n.head_comments <> [] || n.line_comment <> None || n.foot_comments <> []
+        || List.exists has_comments n.items
+    | Mapping_node n ->
+        n.head_comments <> [] || n.line_comment <> None || n.foot_comments <> []
+        || List.exists (fun (k, v) -> has_comments k || has_comments v) n.pairs
+
+  let stream_has_comments = List.exists has_comments
 end
 
 (* ------------------------------------------------------------------ *)

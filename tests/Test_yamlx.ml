@@ -463,6 +463,38 @@ let comment_tests () =
   ]
 
 (* ------------------------------------------------------------------ *)
+(* has_comments / stream_has_comments tests                              *)
+(* ------------------------------------------------------------------ *)
+
+let has_comments_tests () =
+  let parse s = YAMLx.Nodes.of_yaml_exn s in
+  let has s = YAMLx.Nodes.stream_has_comments (parse s) in
+  [
+    Testo.create ~category:[ "has-comments" ] "no comments → false" (fun () ->
+        assert (not (has "key: value\n")));
+    Testo.create ~category:[ "has-comments" ] "head comment → true" (fun () ->
+        assert (has "# preamble\nkey: value\n"));
+    Testo.create ~category:[ "has-comments" ] "line comment → true" (fun () ->
+        assert (has "key: value  # note\n"));
+    Testo.create ~category:[ "has-comments" ] "foot comment on sequence → true"
+      (fun () -> assert (has "- a\n- b\n# trailing\n"));
+    Testo.create ~category:[ "has-comments" ]
+      "comment nested in mapping value → true" (fun () ->
+        assert (has "outer:\n  # inner\n  inner: x\n"));
+    Testo.create ~category:[ "has-comments" ]
+      "comment in second document → true" (fun () ->
+        assert (has "a: 1\n---\n# doc2\nb: 2\n"));
+    Testo.create ~category:[ "has-comments" ]
+      "has_comments on single node without comment → false" (fun () ->
+        let node = List.hd (parse "plain\n") in
+        assert (not (YAMLx.Nodes.has_comments node)));
+    Testo.create ~category:[ "has-comments" ]
+      "has_comments on single node with head comment → true" (fun () ->
+        let node = List.hd (parse "# head\nplain\n") in
+        assert (YAMLx.Nodes.has_comments node));
+  ]
+
+(* ------------------------------------------------------------------ *)
 (* Node-level comment attachment tests                                   *)
 (* ------------------------------------------------------------------ *)
 
@@ -1457,8 +1489,9 @@ let () =
   YAMLx.register_exception_printers ();
   Testo.interpret_argv ~project_name:"yamlx" (fun _tags ->
       unit_tests () @ loc_tests () @ encoding_tests () @ roundtrip_tests ()
-      @ comment_tests () @ comment_node_tests () @ anchor_tests ()
-      @ printer_tests () @ expansion_limit_tests () @ depth_limit_tests ()
-      @ performance_tests () @ conversion_tests () @ block_style_tests ()
-      @ duplicate_key_tests () @ yaml_1_1_tests () @ plain_mode_tests ()
-      @ strict_keys_tests () @ cycle_tests () @ suite_tests ())
+      @ comment_tests () @ has_comments_tests () @ comment_node_tests ()
+      @ anchor_tests () @ printer_tests () @ expansion_limit_tests ()
+      @ depth_limit_tests () @ performance_tests () @ conversion_tests ()
+      @ block_style_tests () @ duplicate_key_tests () @ yaml_1_1_tests ()
+      @ plain_mode_tests () @ strict_keys_tests () @ cycle_tests ()
+      @ suite_tests ())
