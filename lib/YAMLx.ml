@@ -643,6 +643,15 @@ module Values = struct
 end
 
 module Value = struct
+  type t = value =
+    | Null of loc
+    | Bool of loc * bool
+    | Int of loc * int64
+    | Float of loc * float
+    | String of loc * string
+    | Seq of loc * t list
+    | Map of loc * (loc * t * t) list
+
   let of_yaml_exn = Values.one_of_yaml_exn
   let of_yaml = Values.one_of_yaml
   let of_yaml_file = Values.one_of_yaml_file
