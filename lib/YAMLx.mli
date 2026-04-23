@@ -303,6 +303,70 @@ val node_height : node -> int
 
 (**/**)
 
+(** Operations on a single lossless AST node.
+
+    [Node] provides the single-node interface analogous to {!Value}: a [type t]
+    alias and node-level utilities. For parsing and serialising whole documents
+    use {!Nodes}. *)
+module Node : sig
+  type t = node =
+    | Scalar_node of {
+        anchor : string option;
+        tag : string option;
+        value : string;
+        style : scalar_style;
+        loc : loc;
+        height : int;
+        head_comments : string list;
+        line_comment : string option;
+        foot_comments : string list;
+      }
+    | Sequence_node of {
+        anchor : string option;
+        tag : string option;
+        items : t list;
+        flow : bool;
+        loc : loc;
+        height : int;
+        head_comments : string list;
+        line_comment : string option;
+        foot_comments : string list;
+      }
+    | Mapping_node of {
+        anchor : string option;
+        tag : string option;
+        pairs : (t * t) list;
+        flow : bool;
+        loc : loc;
+        height : int;
+        head_comments : string list;
+        line_comment : string option;
+        foot_comments : string list;
+      }
+    | Alias_node of {
+        name : string;
+        resolved : t Lazy.t;
+        loc : loc;
+        height : int;
+        head_comments : string list;
+        line_comment : string option;
+        foot_comments : string list;
+      }
+        (** Alias for {!YAMLx.node}. Exposes the constructors under the [Node]
+            namespace so that [Node.Scalar_node], [Node.Mapping_node], etc. work
+            alongside [YAMLx.Scalar_node]. *)
+
+  val has_comments : t -> bool
+  (** [has_comments node] is [true] if [node] or any of its descendants carries
+      at least one comment (head, line, or foot). *)
+
+  val pp : Format.formatter -> t -> unit
+  (** Pretty-printer for use with [Format] and [%a]. *)
+
+  val show : t -> string
+  (** Return a human-readable representation of a node as a string. *)
+end
+
 (** Operations on the lossless AST node representation.
 
     Use [Nodes] when you need full fidelity: tags, anchors, scalar styles,
@@ -358,6 +422,11 @@ module Nodes : sig
       {!to_plain_yaml_exn}) and writes the result to [path], overwriting any
       existing file. Returns [Error msg] on serialization failure (same errors
       as {!to_plain_yaml_exn}). Raises [Sys_error] on file I/O failure. *)
+
+  val has_comments : t -> bool
+  (** [has_comments nodes] is [true] if any node in the list (one per document)
+      contains a comment. Equivalent to [List.exists Node.has_comments nodes].
+  *)
 end
 
 (** {1 Value operations} *)

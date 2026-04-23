@@ -328,6 +328,65 @@ let write_file path content =
     ~finally:(fun () -> close_out oc)
     (fun () -> output_string oc content)
 
+module Node = struct
+  type t = node =
+    | Scalar_node of {
+        anchor : string option;
+        tag : string option;
+        value : string;
+        style : scalar_style;
+        loc : loc;
+        height : int;
+        head_comments : string list;
+        line_comment : string option;
+        foot_comments : string list;
+      }
+    | Sequence_node of {
+        anchor : string option;
+        tag : string option;
+        items : t list;
+        flow : bool;
+        loc : loc;
+        height : int;
+        head_comments : string list;
+        line_comment : string option;
+        foot_comments : string list;
+      }
+    | Mapping_node of {
+        anchor : string option;
+        tag : string option;
+        pairs : (t * t) list;
+        flow : bool;
+        loc : loc;
+        height : int;
+        head_comments : string list;
+        line_comment : string option;
+        foot_comments : string list;
+      }
+    | Alias_node of {
+        name : string;
+        resolved : t Lazy.t; [@opaque]
+        loc : loc;
+        height : int;
+        head_comments : string list;
+        line_comment : string option;
+        foot_comments : string list;
+      }
+
+  let rec has_comments = function
+    | Scalar_node n -> n.head_comments <> [] || n.line_comment <> None
+    | Alias_node n -> n.head_comments <> [] || n.line_comment <> None
+    | Sequence_node n ->
+        n.head_comments <> [] || n.line_comment <> None || n.foot_comments <> []
+        || List.exists has_comments n.items
+    | Mapping_node n ->
+        n.head_comments <> [] || n.line_comment <> None || n.foot_comments <> []
+        || List.exists (fun (k, v) -> has_comments k || has_comments v) n.pairs
+
+  let pp = pp_node
+  let show = show_node
+end
+
 module Nodes = struct
   type t = node list
 
@@ -358,6 +417,8 @@ module Nodes = struct
     | Ok yaml ->
         write_file path yaml;
         Ok ()
+
+  let has_comments = List.exists Node.has_comments
 end
 
 (* ------------------------------------------------------------------ *)

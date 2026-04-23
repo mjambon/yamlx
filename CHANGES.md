@@ -2,13 +2,32 @@
 
 ### New features
 
+- **`Node` submodule** — single-node interface for the lossless AST
+  ([#37](https://github.com/mjambon/yamlx/issues/37),
+  [#38](https://github.com/mjambon/yamlx/pull/38)).
+  Mirrors the `Value` module for the `node` type:
+  - `Node.t` — forwarding type alias for `node`, exposing all four
+    constructors (`Node.Scalar_node`, `Node.Sequence_node`,
+    `Node.Mapping_node`, `Node.Alias_node`) alongside the top-level names.
+  - `Node.has_comments : Node.t -> bool` — returns `true` if the node or
+    any descendant carries a comment (head, line, or foot).
+  - `Node.pp` / `Node.show` — aliases for `pp_node` / `show_node`.
+  - `Nodes.has_comments : Nodes.t -> bool` — returns `true` if any document
+    in the parsed stream contains a comment. Both `Node` and `Nodes` expose
+    `has_comments` on their own `t`.
+
+- **`Value.t` forwarding type**
+  ([#36](https://github.com/mjambon/yamlx/pull/36)).
+  `Value.t` is an alias for `value` that re-exports all constructors
+  (`Value.Null`, `Value.Bool`, etc.) under the `Value` namespace.
+
 - **`Value` submodule** — single-document interface for typed YAML values
   ([#32](https://github.com/mjambon/yamlx/issues/32)).
   Most config files contain exactly one YAML document; the new `Value` module
   provides a cleaner API for this common case:
   - `Value.of_yaml` / `of_yaml_exn`: parse a string expecting one document.
   - `Value.of_yaml_file`: read and parse a file expecting one document.
-  - `Value.to_yaml` / `to_yaml_file`: serialise a single value back to YAML.
+  - `Value.to_yaml` / `to_yaml_file`: serialize a single value back to YAML.
   - `Value.equal`: structural equality ignoring source locations.
   - `Value.compare`: total order on values ignoring source locations.
   - `Value.pp` / `Value.show`: pretty-printer and string renderer (aliases for
@@ -21,7 +40,7 @@
 
 - **Block scalar heuristics for `Values.to_nodes` / `Values.to_yaml`**
   ([#30](https://github.com/mjambon/yamlx/issues/30)).
-  String values longer than 70 characters are now serialised using block
+  String values longer than 70 characters are now serialized using block
   scalar styles where appropriate:
   - Strings with internal newlines and only safe characters → literal block
     (`|` or `|-`), preserving newlines exactly.
@@ -33,8 +52,8 @@
 - **`reformat` output format** for the `yamlx` CLI
   ([#30](https://github.com/mjambon/yamlx/issues/30)).
   `yamlx -f reformat` reads the input through the typed-value layer (dropping
-  comments, anchors, and tags) and re-serialises using the block scalar
-  heuristics above. This produces a normalised, human-readable YAML output
+  comments, anchors, and tags) and re-serializes using the block scalar
+  heuristics above. This produces a normalized, human-readable YAML output
   from any conforming input.
 
 ## 0.2.0 (2026-04-20)
@@ -59,10 +78,10 @@
   Previously they were silently discarded.
 - Trailing comments after the last item of a block collection are now attached
   as `foot_comments` of the collection and printed at the correct indentation
-  level.  Previously they were attached to the last item's `foot_comments` and
+  level. Previously they were attached to the last item's `foot_comments` and
   printed at column 0.
 - Block scalar header comments (`| # note`, `> # note`) are now captured and
-  round-trip correctly.  Previously the comment was silently dropped.
+  round-trip correctly. Previously the comment was silently dropped.
 - Standalone comments that appear between two documents (before `---`) are now
   attached as `foot_comments` of the preceding document rather than leaking
   into the `head_comments` of the following document's root node.
@@ -79,7 +98,7 @@ Initial release.
   external runtime dependencies.
 - Passes all 371 tests from the
   [yaml-test-suite](https://github.com/yaml/yaml-test-suite).
-- UTF-8 input with BOM stripping and line-ending normalisation (CR+LF,
+- UTF-8 input with BOM stripping and line-ending normalization (CR+LF,
   bare CR, NEL, LS, PS → LF).
 - Multi-document streams.
 - Anchors and aliases, including cycle detection: cyclic structures raise
@@ -112,9 +131,9 @@ Initial release.
   attached to the nearest node and faithfully re-emitted by the printer.
 - `Nodes.of_yaml` / `of_yaml_exn` / `of_yaml_file`: parse YAML to a
   `node list` (one entry per document).
-- `Nodes.to_yaml`: serialise back to YAML, round-tripping styles and
+- `Nodes.to_yaml`: serialize back to YAML, round-tripping styles and
   comments.
-- `Nodes.to_plain_yaml` / `to_plain_yaml_exn`: serialise to simplified
+- `Nodes.to_plain_yaml` / `to_plain_yaml_exn`: serialize to simplified
   YAML (aliases expanded, tags stripped, block collections only).
 
 ### Typed values (`Values` module)
