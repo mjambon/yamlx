@@ -1040,9 +1040,13 @@ let block_style_tests () =
     check_rt "long multiline string" long_multiline;
     check_rt "long prose string" long_prose;
     check_rt "short string" short;
-    (* A string with only trailing newlines should NOT use Literal. *)
+    (* A short string with only a trailing newline stays Double_quoted. *)
     check_style "trailing-newline-only string (short)" "short\n"
       YAMLx.Double_quoted;
+    (* A long prose string with a trailing newline → Folded (issue #39). *)
+    check_style "long prose string with trailing newline" (long_prose ^ "\n")
+      YAMLx.Folded;
+    check_rt "long prose string with trailing newline" (long_prose ^ "\n");
     (* A long string with no spaces and no newlines stays plain. *)
     check_style "long plain string" (String.make 80 'a') YAMLx.Plain;
     (* A long string with spaces AND a control character must NOT use Folded
