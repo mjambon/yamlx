@@ -1,3 +1,14 @@
+## Unreleased
+
+### Bug fixes
+
+- **Folded block scalar for prose strings with a trailing newline**
+  ([#39](https://github.com/mjambon/yamlx/issues/39)).
+  A long prose string ending with `\n` (e.g. from a text field that already
+  carried a line terminator) was incorrectly serialized as a `Double_quoted`
+  scalar. It is now emitted as a `>` folded block (clip chomp), matching the
+  output for the same string without the trailing newline (`>-`).
+
 ## 0.3.0 (2026-04-24)
 
 ### New features

@@ -253,14 +253,23 @@ let rec block_value ~level node =
             double_quoted_body value ^ emit_lc line_comment ^ "\n"
         | Literal -> block_scalar ~lc:line_comment "|" value level
         | Folded ->
-            (* Wrap long single-line content so output lines stay near fold_width. *)
-            let content =
+            (* Strip trailing LFs, wrap the main content if it's long single-line
+               prose, then restore the trailing LFs so block_scalar picks the
+               right chomp indicator. *)
+            let n = String.length value in
+            let trail = count_trailing_newlines value in
+            let main = String.sub value 0 (n - trail) in
+            let wrapped_main =
               if
-                String.length value > fold_width
-                && (not (String.contains value '\n'))
-                && String.contains value ' '
-              then word_wrap value
-              else value
+                String.length main > fold_width
+                && (not (String.contains main '\n'))
+                && String.contains main ' '
+              then word_wrap main
+              else main
+            in
+            let content =
+              if trail > 0 then wrapped_main ^ String.make trail '\n'
+              else wrapped_main
             in
             block_scalar ~lc:line_comment ">" content level
       in

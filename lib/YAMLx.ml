@@ -472,6 +472,15 @@ let has_internal_lf s =
   done;
   !found
 
+(** Return [s] with all trailing ['\n'] characters removed. *)
+let strip_trailing_lf s =
+  let n = String.length s in
+  let i = ref (n - 1) in
+  while !i >= 0 && s.[!i] = '\n' do
+    decr i
+  done;
+  if !i = n - 1 then s else String.sub s 0 (!i + 1)
+
 (** Decide the scalar style for a string value so that it round-trips correctly
     through a YAML parser using the JSON schema. Double-quoted style is used
     whenever the plain representation would be misread as a non-string type or
@@ -536,19 +545,24 @@ let string_scalar_style (s : string) : scalar_style =
 
     - Strings longer than {!block_style_threshold} with internal LF and only
       safe characters → [Literal] (newlines preserved exactly).
-    - Strings longer than {!block_style_threshold} with no LF, at least one
-      internal space, and only printable characters → [Folded] with lines
-      wrapped at ~{!block_style_threshold} characters. *)
+    - Strings longer than {!block_style_threshold} with no internal LF, at least
+      one space, and only printable characters → [Folded] with lines wrapped at
+      ~{!block_style_threshold} characters. A trailing LF is permitted (it only
+      affects the chomp indicator). *)
 let string_node_content (s : string) : scalar_style * string =
   let n = String.length s in
   if n > block_style_threshold then
     if has_internal_lf s && is_safe_for_literal s then (Literal, s)
-    else if
-      (not (String.contains s '\n'))
-      && is_safe_for_folded s && String.contains s ' '
-      && s.[0] <> ' '
-      && s.[n - 1] <> ' '
-    then (Folded, s) (* word wrapping happens in the printer *)
+    else if not (has_internal_lf s) then
+      (* Candidate for Folded: strip trailing LF(s) and check the content. *)
+      let main = strip_trailing_lf s in
+      let mn = String.length main in
+      if
+        mn > 0 && is_safe_for_folded main && String.contains main ' '
+        && main.[0] <> ' '
+        && main.[mn - 1] <> ' '
+      then (Folded, s) (* word wrapping happens in the printer *)
+      else (string_scalar_style s, s)
     else (string_scalar_style s, s)
   else (string_scalar_style s, s)
 
