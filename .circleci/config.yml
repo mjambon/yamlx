@@ -138,7 +138,7 @@ jobs:
           # it's usually fast (~40 s).
           name: Install dependencies
           shell: bash.exe
-          command: opam install ./yamlx.opam -y --deps-only --with-test
+          command: opam install --deps-only --with-test -y .
 
       - save_cache:
           key: opam-win-5.5.0-pkgs-v1-{{ checksum "week_id.txt" }}
@@ -150,7 +150,7 @@ jobs:
       - run:
           name: Build
           shell: bash.exe
-          command: opam exec -- dune build .
+          command: opam exec -- dune build @install
       - run:
           name: Test
           shell: bash.exe
