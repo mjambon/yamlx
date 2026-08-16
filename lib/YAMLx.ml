@@ -1,5 +1,7 @@
 (** YAMLx — pure-OCaml YAML 1.2 parser. *)
 
+open Printf
+
 (* ------------------------------------------------------------------ *)
 (* Type sharing with Types                                               *)
 (* ------------------------------------------------------------------ *)
@@ -234,12 +236,12 @@ let format_loc ?file (loc : loc) : string =
   let loc_str =
     if start_pos.line = end_pos.line then
       if start_pos.column = end_pos.column then
-        Printf.sprintf "line %d, column %d" start_pos.line start_pos.column
+        sprintf "line %d, column %d" start_pos.line start_pos.column
       else
-        Printf.sprintf "line %d, columns %d-%d" start_pos.line start_pos.column
+        sprintf "line %d, columns %d-%d" start_pos.line start_pos.column
           end_pos.column
     else
-      Printf.sprintf "lines %d-%d, columns %d-%d" start_pos.line end_pos.line
+      sprintf "lines %d-%d, columns %d-%d" start_pos.line end_pos.line
         start_pos.column end_pos.column
   in
   match file with
@@ -278,10 +280,9 @@ let catch_errors ?file ?(format_loc = default_format_loc) f =
   | Error (Parse_error e) -> Result.Error (pos_error "parse error" e)
   | Error (Expansion_limit_exceeded n) ->
       Result.Error
-        (other_error (Printf.sprintf "expansion limit exceeded (%d nodes)" n))
+        (other_error (sprintf "expansion limit exceeded (%d nodes)" n))
   | Error (Depth_limit_exceeded n) ->
-      Result.Error
-        (other_error (Printf.sprintf "depth limit exceeded (%d levels)" n))
+      Result.Error (other_error (sprintf "depth limit exceeded (%d levels)" n))
   | Error (Printer_error msg) ->
       Result.Error (other_error ("printer error: " ^ msg))
   | Error (Document_count_error msg) ->
@@ -299,9 +300,9 @@ let register_exception_printers ?(format_loc = default_format_loc) () =
     | Error (Parse_error e) ->
         Some ("YAMLx.Error (Parse_error): " ^ format_loc e.loc ^ ": " ^ e.msg)
     | Error (Expansion_limit_exceeded n) ->
-        Some (Printf.sprintf "YAMLx.Error (Expansion_limit_exceeded %d)" n)
+        Some (sprintf "YAMLx.Error (Expansion_limit_exceeded %d)" n)
     | Error (Depth_limit_exceeded n) ->
-        Some (Printf.sprintf "YAMLx.Error (Depth_limit_exceeded %d)" n)
+        Some (sprintf "YAMLx.Error (Depth_limit_exceeded %d)" n)
     | Error (Printer_error msg) -> Some ("YAMLx.Error (Printer_error): " ^ msg)
     | Error (Document_count_error msg) ->
         Some ("YAMLx.Error (Document_count_error): " ^ msg)
@@ -566,12 +567,28 @@ let string_node_content (s : string) : scalar_style * string =
     else (string_scalar_style s, s)
   else (string_scalar_style s, s)
 
+(*
+   This function is ~8x faster than sprintf but the format string
+   must be valid (otherwise we may get an Out_of_memory exception or crash).
+   It should not be exposed to users as is.
+*)
+external caml_format_float : string -> float -> string = "caml_format_float"
+
 (** Format a float as a YAML-safe plain scalar. *)
 let format_float (f : float) : string =
   if Float.is_nan f then ".nan"
   else if Float.is_infinite f then if f > 0.0 then ".inf" else "-.inf"
   else
-    let s = Printf.sprintf "%.17g" f in
+    let s =
+      (*
+         Avoid getting a long tail of unnecessary decimals such as
+         "3.1400000000000001" when using 'sprintf "%.17g" 3.14'.
+         "%.17g" guarantees roundtripping but often "%.16g" is sufficient
+         and produces more compact, reader-friendly output.
+      *)
+      let s16 = caml_format_float "%.16g" f in
+      if float_of_string s16 = f then s16 else caml_format_float "%.17g" f
+    in
     (* Ensure the string won't be re-read as an integer by requiring a
        decimal point or exponent marker. *)
     if String.contains s '.' || String.contains s 'e' || String.contains s 'E'
