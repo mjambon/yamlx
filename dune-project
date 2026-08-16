@@ -23,8 +23,10 @@
   (ocaml (>= 4.14.0))
   ppx_deriving
   (testo :with-test)
-  (afl-persistent :dev)
-  (yaml :dev)
+  (odoc :with-doc)
+  (afl-persistent :with-dev-setup)
+  (ocamlformat :with-dev-setup)
+  (yaml :with-dev-setup)
  )
  (tags
   (yaml parser serialization)
