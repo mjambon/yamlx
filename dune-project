@@ -24,6 +24,7 @@
   ppx_deriving
   (testo :with-test)
   (afl-persistent :with-dev-setup)
+  (ocamlformat :with-dev-setup)
   (yaml :with-dev-setup)
  )
  (tags
