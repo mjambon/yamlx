@@ -1,4 +1,4 @@
-## Unreleased
+## 0.4.0 (2026-08-16)
 
 - **Folded block scalar for prose strings with a trailing newline**
   ([#39](https://github.com/mjambon/yamlx/issues/39)).
