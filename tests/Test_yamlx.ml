@@ -1,6 +1,8 @@
 (** Main test suite for YAMLx. Runs the standard yaml-test-suite cases plus a
     handful of hand-written unit tests. *)
 
+open Printf
+
 (*
     Test strategy
     ~~~~~~~~~~~~~
@@ -47,18 +49,15 @@ let canonical_tree s =
     compare the event tree. For failure cases: assert that an error is raised.
 *)
 let run_test_case (tc : Suite_loader.test_case) () =
-  if tc.fail then
-    (* Expect a scan or parse error *)
-    begin match YAMLx.parse_events tc.yaml with
+  if tc.fail then (* Expect a scan or parse error *)
+    match YAMLx.parse_events tc.yaml with
     | exception YAMLx.Error (YAMLx.Scan_error _) -> () (* expected *)
     | exception YAMLx.Error (YAMLx.Parse_error _) -> () (* expected *)
     | _ ->
         failwith
-          (Printf.sprintf
-             "[%s] %s: expected a parse failure but parsing succeeded" tc.id
-             tc.name)
-    end
-  else begin
+          (sprintf "[%s] %s: expected a parse failure but parsing succeeded"
+             tc.id tc.name)
+  else
     (* Parse must succeed *)
     let events = YAMLx.parse_events tc.yaml in
     (* Only compare against the expected tree if one is given *)
@@ -69,7 +68,6 @@ let run_test_case (tc : Suite_loader.test_case) () =
         Testo.(check text)
           (canonical_tree expected_tree)
           (canonical_tree actual_tree)
-  end
 
 (* ------------------------------------------------------------------ *)
 (* Hand-written unit tests                                               *)
@@ -191,7 +189,7 @@ let loc_tests () =
           || e.offset <> expected_offset
         then
           failwith
-            (Printf.sprintf
+            (sprintf
                "expected end_pos {line=%d col=%d offset=%d}, got {line=%d \
                 col=%d offset=%d}"
                expected_line expected_col expected_offset e.line e.column
@@ -393,6 +391,25 @@ let roundtrip_tests () =
       check "empty sequence" "[]\n";
     ]
 
+let float_format_tests () =
+  let check name x expected_yaml =
+    Testo.create name ~category:[ "float format" ] (fun () ->
+        let yaml = YAMLx.Value.to_yaml (Float (YAMLx.zero_loc, x)) in
+        Testo.(check string) expected_yaml yaml;
+        match YAMLx.Value.of_yaml_exn yaml with
+        | Float (_loc, x') ->
+            Testo.(check float) ~msg:"roundtrip float->YAML->float" x x'
+        | _ -> ksprintf failwith "YAML not interpreted as a float: %S" yaml)
+  in
+  [
+    check "spurious decimals 3.14" 3.14 "3.14\n";
+    check "spurious decimals 0.1" 0.1 "0.1\n";
+    check "float not int 42.0" 42. "42.0\n";
+    check "infinity" infinity ".inf\n";
+    check "negative infinity" neg_infinity "-.inf\n";
+    check "nan" nan ".nan\n";
+  ]
+
 (* ------------------------------------------------------------------ *)
 (* Comment preservation tests                                            *)
 (* ------------------------------------------------------------------ *)
@@ -445,7 +462,7 @@ let comment_tests () =
            that a flow sequence with no comments round-trips without adding any. *)
         let out = YAMLx.Nodes.to_yaml (YAMLx.Nodes.of_yaml_exn "[a, b]\n") in
         if String.contains out '#' then
-          failwith (Printf.sprintf "unexpected '#' in output: %S" out));
+          failwith (sprintf "unexpected '#' in output: %S" out));
     Testo.create ~category:[ "comments" ]
       "double-hash head comment preserved verbatim"
       (* '## hello' must not become '# # hello' *)
@@ -761,12 +778,12 @@ let performance_tests () =
         in
         let t1 = time_per_iter 4000 in
         let t2 = time_per_iter 8000 in
-        Printf.printf "depth 4000 = %.4fs, depth 8000 = %.4fs (ratio %.1f)\n%!"
-          t1 t2 (t2 /. t1);
+        printf "depth 4000 = %.4fs, depth 8000 = %.4fs (ratio %.1f)\n%!" t1 t2
+          (t2 /. t1);
         (* t2 / t1 should be close to 2 for O(n); allow up to 16× for noise *)
         if t2 /. t1 > 16.0 then
           failwith
-            (Printf.sprintf
+            (sprintf
                "quadratic behaviour detected: depth 4000 = %.4fs, depth 8000 = \
                 %.4fs (ratio %.1f, expected ~2)"
                t1 t2 (t2 /. t1)));
@@ -778,8 +795,8 @@ let performance_tests () =
 
 let suite_tests () =
   if not (Sys.file_exists suite_dir) then
-    failwith (Printf.sprintf "yaml-test-suite not found at %s" suite_dir)
-  else begin
+    failwith (sprintf "yaml-test-suite not found at %s" suite_dir)
+  else
     let cases = Suite_loader.load_dir suite_dir in
     (* Assign a per-id sequence number so that multiple test cases from the
        same file (same id) get unique names: 'DK95 #2: name'. *)
@@ -798,14 +815,13 @@ let suite_tests () =
         in
         let name =
           if tc.name = "" then
-            if seq = 1 then tc.id else Printf.sprintf "%s #%d" tc.id seq
-          else if seq = 1 then Printf.sprintf "%s: %s" tc.id tc.name
-          else Printf.sprintf "%s #%d: %s" tc.id seq tc.name
+            if seq = 1 then tc.id else sprintf "%s #%d" tc.id seq
+          else if seq = 1 then sprintf "%s: %s" tc.id tc.name
+          else sprintf "%s #%d: %s" tc.id seq tc.name
         in
         Testo.create ~category:[ "yaml-test-suite" ] ~max_duration:5.0 name
           (run_test_case tc))
       cases
-  end
 
 (* ------------------------------------------------------------------ *)
 (* Anchor scoping tests                                                  *)
@@ -925,8 +941,7 @@ let value_rt v =
   match YAMLx.Values.of_nodes_exn nodes with
   | [ v' ] -> v'
   | vs ->
-      failwith
-        (Printf.sprintf "value_rt: expected 1 value, got %d" (List.length vs))
+      failwith (sprintf "value_rt: expected 1 value, got %d" (List.length vs))
 
 (** [nodes_rt yaml] performs the nodes → values → nodes roundtrip on [yaml] and
     returns both the intermediate values and the final values obtained by
@@ -1022,7 +1037,7 @@ let block_style_tests () =
         | YAMLx.Scalar_node { style; _ } ->
             if style <> expected_style then
               failwith
-                (Printf.sprintf "expected %s, got %s"
+                (sprintf "expected %s, got %s"
                    (YAMLx.show_scalar_style expected_style)
                    (YAMLx.show_scalar_style style))
         | _ -> failwith "expected Scalar_node")
@@ -1493,9 +1508,9 @@ let () =
   YAMLx.register_exception_printers ();
   Testo.interpret_argv ~project_name:"yamlx" (fun _tags ->
       unit_tests () @ loc_tests () @ encoding_tests () @ roundtrip_tests ()
-      @ comment_tests () @ has_comments_tests () @ comment_node_tests ()
-      @ anchor_tests () @ printer_tests () @ expansion_limit_tests ()
-      @ depth_limit_tests () @ performance_tests () @ conversion_tests ()
-      @ block_style_tests () @ duplicate_key_tests () @ yaml_1_1_tests ()
-      @ plain_mode_tests () @ strict_keys_tests () @ cycle_tests ()
-      @ suite_tests ())
+      @ float_format_tests () @ comment_tests () @ has_comments_tests ()
+      @ comment_node_tests () @ anchor_tests () @ printer_tests ()
+      @ expansion_limit_tests () @ depth_limit_tests () @ performance_tests ()
+      @ conversion_tests () @ block_style_tests () @ duplicate_key_tests ()
+      @ yaml_1_1_tests () @ plain_mode_tests () @ strict_keys_tests ()
+      @ cycle_tests () @ suite_tests ())
