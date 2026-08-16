@@ -24,13 +24,13 @@ commands:
             echo $(( $(date +%s) / 604800 - 1 )) > previous_week_id.txt
       - restore_cache:
           keys:
-            - opam-alpine-<< parameters.ocaml_version >>-v1-{{ checksum "week_id.txt" }}
-            - opam-alpine-<< parameters.ocaml_version >>-v1-{{ checksum "previous_week_id.txt" }}
+            - opam-alpine-<< parameters.ocaml_version >>-v2-{{ checksum "week_id.txt" }}
+            - opam-alpine-<< parameters.ocaml_version >>-v2-{{ checksum "previous_week_id.txt" }}
       - run:
           name: Install dependencies
           command: ./.circleci/setup-opam
       - save_cache:
-          key: opam-alpine-<< parameters.ocaml_version >>-v1-{{ checksum "week_id.txt" }}
+          key: opam-alpine-<< parameters.ocaml_version >>-v2-{{ checksum "week_id.txt" }}
           paths:
             - ~/.opam
       - run:
