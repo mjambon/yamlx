@@ -6,15 +6,25 @@
 #
 set -eu
 
+# - We need an opam version that supports 'with-dev-setup' tags
+#   and 'opam tree' (opam >= 2.2.0).
+# - We need 'pre-commit' to run Git pre-commit hooks (ocamlformat).
+sudo apk --no-cache add \
+  opam \
+  pre-commit
+
+echo -n "opam version: "
+opam --version
+
 eval "$(opam env)"
 
-# Set up the opam repo (skip if already done, e.g. from a restored cache).
-if ! opam repo list | grep -q '^github\b'; then
-  opam repo add --all-switches -k git \
-    github https://github.com/ocaml/opam-repository.git
-  opam repo remove default
+# Change the repo from 'git+file:///home/opam/opam-repository'
+# back to the original 'https://opam.ocaml.org'.
+if ! opam repo list | grep -q -F 'https://opam.ocaml.org'; then
+  opam repo set-url default https://opam.ocaml.org
+  # an opam update is included
+else
+  opam update
 fi
-# no need for 'opam update'
 
-opam install --deps-only --with-test -y \
-  ./yamlx.opam
+opam install --deps-only --with-test --with-dev-setup --with-doc -y .
