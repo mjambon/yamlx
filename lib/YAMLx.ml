@@ -754,6 +754,21 @@ module Value = struct
   let pp = pp_value
   let show = show_value
   let loc = value_loc
+
+  module Build = struct
+    let null = Null zero_loc
+    let bool b = Bool (zero_loc, b)
+    let int i = Int (zero_loc, Int64.of_int i)
+    let int64 i = Int (zero_loc, i)
+    let float f = Float (zero_loc, f)
+    let string s = String (zero_loc, s)
+    let seq items = Seq (zero_loc, items)
+
+    let map pairs =
+      Map
+        ( zero_loc,
+          List.map (fun (k, v) -> (zero_loc, String (zero_loc, k), v)) pairs )
+  end
 end
 
 (* ------------------------------------------------------------------ *)
