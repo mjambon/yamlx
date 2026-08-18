@@ -67,19 +67,30 @@ let usage_msg =
   Multi-document streams, anchors, tags, and Unicode are fully supported.
 
   Output formats (-f FORMAT):
-    yaml    Pretty-printed YAML — scalar styles and block/flow mode preserved
+    yaml
+            Pretty-printed YAML — scalar styles and block/flow mode preserved
             (default)
-    plain   Simplified YAML — aliases expanded, tags stripped, flow collections
+    plain
+            Simplified YAML — aliases expanded, tags stripped, flow collections
             converted to block; merge keys expanded in YAML 1.1 mode
-    reformat  Normalized YAML — reads input as typed values, then re-serialises.
-            Drops comments, anchors, and tags. Converts flow collections to block.
-            Long strings use literal (|) or folded (>) block style as appropriate.
-    value   Typed-value tree: Null / Bool / Int / Float / String / Seq / Map
-            Useful for checking how scalars are resolved (e.g. is "1e2" a Float?)
-    value-loc  Same as value but with source locations
-    node    Full AST without source locations or heights
-    node-loc  Same as node but with source locations and heights
-    events  yaml-test-suite event-tree notation (mainly for parser testing)
+    reformat
+            Normalized YAML — reads input as typed values, then re-serializes.
+            Drops comments, anchors, and tags. Converts flow collections to
+            block.
+            Long strings use literal (|) or folded (>) block style as
+            appropriate.
+    value
+            Typed-value tree: Null / Bool / Int / Float / String / Seq / Map
+            Useful for checking how scalars are resolved (e.g. is "1e2" a
+            Float?)
+    value-loc
+            Same as value but with source locations
+    node
+            Full AST without source locations or heights
+    node-loc
+            Same as node but with source locations and heights
+    events
+            yaml-test-suite event-tree notation (mainly for parser testing)
 
   YAML schema (--schema VERSION):
     1.2  YAML 1.2 JSON schema — default. Booleans: true/false only.
