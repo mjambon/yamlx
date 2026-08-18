@@ -28,6 +28,14 @@ This is AI-assisted software, fully owned and maintained by Martin Jambon.
 - **Typed-value resolver** — `Values.of_yaml` applies the YAML 1.2 JSON
   schema and returns `value list` with `Null | Bool | Int | Float |
   String | Seq | Map` constructors.
+- **Programmatic value construction** — `Value.Build` provides convenience
+  constructors (`null`, `bool`, `int`, `float`, `string`, `seq`, `map`)
+  that fill in `zero_loc` automatically, for building value trees without
+  a source file.
+- **Duplicate-key detection on export** — `Values.to_yaml` and friends
+  raise `Duplicate_key_error` by default when a map contains repeated
+  keys, catching bugs in programmatically-constructed values before they
+  reach the output. Pass `~strict_keys:false` to allow duplicates through.
 - **Multi-document streams** — both the node and value APIs handle
   streams containing more than one `---`-separated document.
 - **Correct anchor scoping** — anchors are document-local; an alias in
@@ -42,21 +50,28 @@ This is AI-assisted software, fully owned and maintained by Martin Jambon.
 ## Quick start
 
 ```ocaml
-(* Resolve to typed values — returns (value list, string) result *)
-match YAMLx.Values.of_yaml "answer: 42\nflag: true" with
-| Ok [ Map (_, [(_, String (_, "answer"), Int (_, 42L));
-               (_, String (_, "flag"),   Bool (_, true))]) ] -> ...
-| _ -> ...
-
-(* Read from a file; errors include the file name *)
-match YAMLx.Values.of_yaml_file "config.yaml" with
-| Ok values -> ...
+(* Single-document config file — most common pattern *)
+match YAMLx.Value.of_yaml_file "config.yaml" with
+| Ok value  -> ...
 | Error msg -> prerr_endline msg  (* "file config.yaml, line 3, col 5: ..." *)
 
-(* Expect exactly one document *)
-match YAMLx.Values.one_of_yaml input with
-| Ok value  -> ...
+(* Parse a YAML string into a single typed value *)
+match YAMLx.Value.of_yaml "answer: 42\nflag: true" with
+| Ok (Map (_, [(_, String (_, "answer"), Int (_, 42L));
+               (_, String (_, "flag"),   Bool (_, true))])) -> ...
+| _ -> ...
+
+(* Multi-document stream *)
+match YAMLx.Values.of_yaml input with
+| Ok values -> ...
 | Error msg -> ...
+
+(* Build a value tree programmatically and serialize it *)
+let v =
+  YAMLx.Value.Build.(
+    map [ "name", string "Alice"; "scores", seq [ int 95; int 87 ] ])
+in
+print_string (YAMLx.Value.to_yaml v)
 
 (* Round-trip through the lossless AST *)
 match YAMLx.Nodes.of_yaml input with
@@ -76,19 +91,41 @@ match YAMLx.Nodes.of_yaml input with
 ## Command-line tool
 
 ```
-yamlx [-f FORMAT] [FILE]
+yamlx [-f FORMAT] [--schema VERSION] [FILE]
 
 Output formats (-f FORMAT):
-  yaml        Re-emit YAML, preserving styles and comments (default)
-  plain       Plain YAML: aliases expanded, tags stripped, block-only
-  value       Typed-value tree: Null / Bool / Int / Float / String / Seq / Map
-  value-noloc Same as value but without source locations
-  node        Full AST: anchors, tags, styles, locations, comments
-  node-noloc  Same as node but without source locations and heights
-  events      yaml-test-suite event-tree notation (mainly for debugging)
+  yaml         Pretty-printed YAML — scalar styles and block/flow mode
+               preserved (default)
+  plain        Simplified YAML — aliases expanded, tags stripped, flow
+               collections converted to block; merge keys expanded in
+               YAML 1.1 mode
+  reformat     Normalized YAML — reads input as typed values, then
+               re-serializes. Drops comments, anchors, and tags. Converts
+               flow collections to block. Long strings use literal (|) or
+               folded (>) block style as appropriate.
+  value        Typed-value tree: Null / Bool / Int / Float / String / Seq /
+               Map. Useful for checking how scalars are resolved.
+  value-loc    Same as value but with source locations
+  node         Full AST without source locations or heights
+  node-loc     Same as node but with source locations and heights
+  events       yaml-test-suite event-tree notation (mainly for parser testing)
+
+YAML schema (--schema VERSION):
+  1.2  YAML 1.2 JSON schema — default. Booleans: true/false only.
+  1.1  YAML 1.1 schema — extended booleans (yes/no/on/off), 0755-style
+       octal, sexagesimal, merge keys (<<).
 
 Options:
-  --strict    With -f plain: raise an error on tags instead of stripping them
+  --strict          With -f plain: error on tags instead of stripping them
+  --strict-schema   Error if the document's %YAML directive disagrees with
+                    --schema
+  --reject-ambiguous
+                    With --schema 1.2: error on plain scalars that would
+                    resolve differently under YAML 1.1 (e.g. yes, 0755, <<)
+  --plain           With -f value or value-loc: error on anchors, aliases,
+                    explicit tags, or (with --schema 1.1) merge keys
+  --strict-keys     With -f value or value-loc: error on duplicate mapping
+                    keys instead of silently keeping the last occurrence
 ```
 
 ## Comment preservation
