@@ -29,7 +29,7 @@ setup-opam:
 
 .PHONY: install-deps
 install-deps:
-	opam install ./yamlx.opam -y --deps-only --with-test --with-doc
+	opam install --deps-only --with-test --with-dev-setup --with-doc -y .
 
 # Build odoc HTML documentation and copy it into docs/ (served by GitHub Pages)
 .PHONY: doc
