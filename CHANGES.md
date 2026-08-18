@@ -1,3 +1,13 @@
+## Unreleased
+
+- **`Value.Build` submodule** — convenience constructors using `zero_loc`
+  ([#44](https://github.com/mjambon/yamlx/issues/44),
+  [#45](https://github.com/mjambon/yamlx/pull/45)).
+  Provides `null`, `bool`, `int`, `int64`, `float`, `string`, `seq`, and
+  `map` for building `value` trees programmatically without repeating
+  `zero_loc`. `map` takes `(string * value) list`; non-string keys require
+  the `Map` constructor directly.
+
 ## 0.4.0 (2026-08-16)
 
 - **Folded block scalar for prose strings with a trailing newline**
