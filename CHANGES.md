@@ -10,6 +10,8 @@
   default (`false`) because duplicate keys on export are almost always a bug
   and are not reliably supported across YAML implementations. Pass
   `~strict_keys:false` to allow them through.
+  **Breaking change**: existing code that serializes maps with duplicate keys
+  will now raise `Duplicate_key_error` unless `~strict_keys:false` is passed.
 
 - **`Value.Build` submodule** — convenience constructors using `zero_loc`
   ([#44](https://github.com/mjambon/yamlx/issues/44),
