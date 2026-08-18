@@ -661,6 +661,37 @@ let rec value_to_node : value -> node = function
           foot_comments = [];
         }
 
+let check_strict_keys_value values =
+  let check_unique pairs =
+    let seen = ref Types.Value_set.empty in
+    List.iter
+      (fun (pair_loc, k, _) ->
+        if Types.Value_set.mem k !seen then
+          raise
+            (Error
+               (Duplicate_key_error
+                  { msg = "duplicate mapping key"; loc = pair_loc }));
+        seen := Types.Value_set.add k !seen)
+      pairs
+  in
+  let rec go = function
+    | Null _
+    | Bool _
+    | Int _
+    | Float _
+    | String _ ->
+        ()
+    | Seq (_, items) -> List.iter go items
+    | Map (_, pairs) ->
+        check_unique pairs;
+        List.iter
+          (fun (_, k, v) ->
+            go k;
+            go v)
+          pairs
+  in
+  List.iter go values
+
 module Values = struct
   type t = value list
 
@@ -729,9 +760,15 @@ module Values = struct
         one_of_yaml ~file:path ?max_depth ?expansion_limit ?schema
           ?strict_schema ?reject_ambiguous ?plain ?strict_keys input
 
-  let to_nodes values = List.map value_to_node values
-  let to_yaml values = Nodes.to_yaml (to_nodes values)
-  let to_yaml_file path values = write_file path (to_yaml values)
+  let to_nodes ?(strict_keys = true) values =
+    if strict_keys then check_strict_keys_value values;
+    List.map value_to_node values
+
+  let to_yaml ?(strict_keys = true) values =
+    Nodes.to_yaml (to_nodes ~strict_keys values)
+
+  let to_yaml_file ?(strict_keys = true) path values =
+    write_file path (to_yaml ~strict_keys values)
 end
 
 module Value = struct
@@ -747,8 +784,11 @@ module Value = struct
   let of_yaml_exn = Values.one_of_yaml_exn
   let of_yaml = Values.one_of_yaml
   let of_yaml_file = Values.one_of_yaml_file
-  let to_yaml v = Values.to_yaml [ v ]
-  let to_yaml_file path v = Values.to_yaml_file path [ v ]
+  let to_yaml ?(strict_keys = true) v = Values.to_yaml ~strict_keys [ v ]
+
+  let to_yaml_file ?(strict_keys = true) path v =
+    Values.to_yaml_file ~strict_keys path [ v ]
+
   let equal = equal_value
   let compare = Types.compare_value
   let pp = pp_value

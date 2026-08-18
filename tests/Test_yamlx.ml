@@ -1460,6 +1460,84 @@ let strict_keys_tests () =
   ]
 
 (* ------------------------------------------------------------------ *)
+(* Strict-keys export tests                                              *)
+(* ------------------------------------------------------------------ *)
+
+let strict_keys_export_tests () =
+  let dup_map =
+    (* {a: 1, a: 2} — duplicate string key "a" *)
+    YAMLx.Map
+      ( z,
+        [
+          (z, YAMLx.String (z, "a"), YAMLx.Int (z, 1L));
+          (z, YAMLx.String (z, "a"), YAMLx.Int (z, 2L));
+        ] )
+  in
+  let unique_map =
+    YAMLx.Map
+      ( z,
+        [
+          (z, YAMLx.String (z, "a"), YAMLx.Int (z, 1L));
+          (z, YAMLx.String (z, "b"), YAMLx.Int (z, 2L));
+        ] )
+  in
+  let nested_dup =
+    (* outer map is unique, but inner map has a duplicate *)
+    YAMLx.Map
+      ( z,
+        [
+          ( z,
+            YAMLx.String (z, "outer"),
+            YAMLx.Map
+              ( z,
+                [
+                  (z, YAMLx.String (z, "x"), YAMLx.Int (z, 1L));
+                  (z, YAMLx.String (z, "x"), YAMLx.Int (z, 2L));
+                ] ) );
+        ] )
+  in
+  let cat = [ "strict-keys-export" ] in
+  [
+    Testo.create ~category:cat
+      "to_nodes: duplicate key raises Duplicate_key_error by default" (fun () ->
+        match YAMLx.Values.to_nodes [ dup_map ] with
+        | exception YAMLx.Error (YAMLx.Duplicate_key_error _) -> ()
+        | _ -> failwith "expected Duplicate_key_error");
+    Testo.create ~category:cat
+      "to_nodes: duplicate key raises with explicit strict_keys:true" (fun () ->
+        match YAMLx.Values.to_nodes ~strict_keys:true [ dup_map ] with
+        | exception YAMLx.Error (YAMLx.Duplicate_key_error _) -> ()
+        | _ -> failwith "expected Duplicate_key_error");
+    Testo.create ~category:cat
+      "to_nodes: duplicate key allowed with strict_keys:false" (fun () ->
+        ignore (YAMLx.Values.to_nodes ~strict_keys:false [ dup_map ]));
+    Testo.create ~category:cat "to_nodes: unique keys accepted by default"
+      (fun () -> ignore (YAMLx.Values.to_nodes [ unique_map ]));
+    Testo.create ~category:cat
+      "to_nodes: nested duplicate raises Duplicate_key_error" (fun () ->
+        match YAMLx.Values.to_nodes [ nested_dup ] with
+        | exception YAMLx.Error (YAMLx.Duplicate_key_error _) -> ()
+        | _ -> failwith "expected Duplicate_key_error for nested duplicate");
+    Testo.create ~category:cat
+      "to_yaml: duplicate key raises Duplicate_key_error by default" (fun () ->
+        match YAMLx.Values.to_yaml [ dup_map ] with
+        | exception YAMLx.Error (YAMLx.Duplicate_key_error _) -> ()
+        | _ -> failwith "expected Duplicate_key_error");
+    Testo.create ~category:cat
+      "to_yaml: duplicate key allowed with strict_keys:false" (fun () ->
+        ignore (YAMLx.Values.to_yaml ~strict_keys:false [ dup_map ]));
+    Testo.create ~category:cat
+      "Value.to_yaml: duplicate key raises Duplicate_key_error by default"
+      (fun () ->
+        match YAMLx.Value.to_yaml dup_map with
+        | exception YAMLx.Error (YAMLx.Duplicate_key_error _) -> ()
+        | _ -> failwith "expected Duplicate_key_error");
+    Testo.create ~category:cat
+      "Value.to_yaml: duplicate key allowed with strict_keys:false" (fun () ->
+        ignore (YAMLx.Value.to_yaml ~strict_keys:false dup_map));
+  ]
+
+(* ------------------------------------------------------------------ *)
 (* Cycle-detection tests                                                 *)
 (* ------------------------------------------------------------------ *)
 
@@ -1513,4 +1591,5 @@ let () =
       @ expansion_limit_tests () @ depth_limit_tests () @ performance_tests ()
       @ conversion_tests () @ block_style_tests () @ duplicate_key_tests ()
       @ yaml_1_1_tests () @ plain_mode_tests () @ strict_keys_tests ()
+      @ strict_keys_export_tests ()
       @ cycle_tests () @ suite_tests ())

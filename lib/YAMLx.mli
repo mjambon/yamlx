@@ -23,6 +23,14 @@
 
       (* Serialize nodes back to YAML *)
       let yaml = YAMLx.Nodes.to_yaml nodes
+
+      (* Create a YAML value programmatically *)
+      let value = YAMLx.Value.Build.(
+        map [
+          "name", string "Alice";
+          "scores", seq [ int 95; int 87 ]
+        ]
+      )
     ]}
 
     All errors are reported by raising {!Error}. Use {!Value.of_yaml} or
@@ -275,7 +283,10 @@ type node =
 
     Each constructor carries a {!type-loc} giving the source range of the
     corresponding YAML node. Use {!Value.equal} for location-independent
-    structural equality. *)
+    structural equality.
+
+    To build new values more conveniently, use {!Value.Build.bool},
+    {!Value.Build.string}, etc. *)
 type value =
   | Null of loc
   | Bool of loc * bool
@@ -594,9 +605,17 @@ module Values : sig
   [@@deprecated "Use Value.of_yaml_exn instead."]
   (** @deprecated Use {!Value.of_yaml_exn} instead. *)
 
-  val to_nodes : t -> node list
+  val to_nodes : ?strict_keys:bool -> t -> node list
   (** Convert typed values back to AST nodes. Each {!value} becomes one {!node}
       document. Source locations in the returned nodes are zeroed.
+
+      [~strict_keys] (default: [true]) controls whether duplicate mapping keys
+      are rejected. The default is the opposite of the import-side default
+      ([false]) because exporting a map with duplicate keys is almost always a
+      bug: the second key silently shadows the first, and many YAML
+      implementations reject duplicate keys outright. Raises
+      {!Duplicate_key_error} when a mapping in any document contains the same
+      key more than once. Pass [~strict_keys:false] to allow duplicates through.
 
       String scalars are styled as follows:
       - Strings that look like YAML keywords ([null], [true], numbers) →
@@ -608,14 +627,18 @@ module Values : sig
         breaks inserted at word boundaries to keep lines near 70 characters.
       - Everything else → [Plain] or [Double_quoted]. *)
 
-  val to_yaml : t -> string
+  val to_yaml : ?strict_keys:bool -> t -> string
   (** Serialize typed values to a YAML string. Equivalent to
-      [Nodes.to_yaml (to_nodes values)]. Does not raise. *)
+      [Nodes.to_yaml (to_nodes ?strict_keys values)].
 
-  val to_yaml_file : string -> t -> unit
+      [~strict_keys] (default: [true]) — see {!to_nodes}. *)
+
+  val to_yaml_file : ?strict_keys:bool -> string -> t -> unit
   (** [to_yaml_file path values] serializes values to YAML (via {!to_yaml}) and
       writes the result to [path], overwriting any existing file. Raises
-      [Sys_error] on file I/O failure. *)
+      [Sys_error] on file I/O failure.
+
+      [~strict_keys] (default: [true]) — see {!to_nodes}. *)
 end
 
 (** Single-document interface for typed YAML values.
@@ -686,14 +709,18 @@ module Value : sig
       File-read errors and wrong document count are returned as [Error msg]. The
       file path is automatically prepended to all error messages. *)
 
-  val to_yaml : value -> string
+  val to_yaml : ?strict_keys:bool -> value -> string
   (** Serialize a single typed value to a YAML string. Equivalent to
-      [Values.to_yaml [v]]. Does not raise. *)
+      [Values.to_yaml ?strict_keys [v]].
 
-  val to_yaml_file : string -> value -> unit
+      [~strict_keys] (default: [true]) — see {!Values.to_nodes}. *)
+
+  val to_yaml_file : ?strict_keys:bool -> string -> value -> unit
   (** [to_yaml_file path v] serializes [v] to YAML (via {!to_yaml}) and writes
       the result to [path], overwriting any existing file. Raises [Sys_error] on
-      file I/O failure. *)
+      file I/O failure.
+
+      [~strict_keys] (default: [true]) — see {!Values.to_nodes}. *)
 
   val equal : value -> value -> bool
   (** Structural equality that ignores source locations. Two values are equal
@@ -720,11 +747,11 @@ module Value : sig
       the location of the corresponding YAML node. Useful for building error
       messages in catch-all match arms:
       {[
-      match x with
-      | Int (_, i) -> i
-      | bad ->
-          ksprintf failwith "%s: expected an int"
-            (bad |> YAMLx.Value.loc |> YAMLx.format_loc)
+        match x with
+        | Int (_, i) -> i
+        | bad ->
+            ksprintf failwith "%s: expected an int"
+              (bad |> YAMLx.Value.loc |> YAMLx.format_loc)
       ]} *)
 
   (** Convenience constructors that use {!zero_loc} as the source location.
