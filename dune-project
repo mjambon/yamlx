@@ -25,7 +25,7 @@
   (testo :with-test)
   (odoc (and (>= 3.2.1) :with-doc))
   (afl-persistent :with-dev-setup)
-  (ocamlformat (and (>= 0.27.0) :with-dev-setup))
+  (ocamlformat (and (= 0.27.0) :with-dev-setup))
   (yaml :with-dev-setup)
  )
  (tags
