@@ -720,11 +720,11 @@ module Value : sig
       the location of the corresponding YAML node. Useful for building error
       messages in catch-all match arms:
       {[
-        match x with
-        | Int (_, i) -> i
-        | bad ->
-            ksprintf failwith "%s: expected an int"
-              (bad |> YAMLx.Value.loc |> YAMLx.format_loc)
+      match x with
+      | Int (_, i) -> i
+      | bad ->
+          ksprintf failwith "%s: expected an int"
+            (bad |> YAMLx.Value.loc |> YAMLx.format_loc)
       ]} *)
 
   (** Convenience constructors that use {!zero_loc} as the source location.
