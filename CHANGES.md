@@ -1,5 +1,16 @@
 ## Unreleased
 
+- **Duplicate-key check on export**
+  ([#46](https://github.com/mjambon/yamlx/issues/46),
+  [#47](https://github.com/mjambon/yamlx/pull/47)).
+  `Values.to_nodes`, `Values.to_yaml`, `Values.to_yaml_file`,
+  `Value.to_yaml`, and `Value.to_yaml_file` now accept `~strict_keys`
+  (default: `true`). Exporting a map with duplicate keys raises
+  `Duplicate_key_error`. The default is the opposite of the import-side
+  default (`false`) because duplicate keys on export are almost always a bug
+  and are not reliably supported across YAML implementations. Pass
+  `~strict_keys:false` to allow them through.
+
 - **`Value.Build` submodule** — convenience constructors using `zero_loc`
   ([#44](https://github.com/mjambon/yamlx/issues/44),
   [#45](https://github.com/mjambon/yamlx/pull/45)).
