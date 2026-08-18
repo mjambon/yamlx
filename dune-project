@@ -23,9 +23,9 @@
   (ocaml (>= 4.14.0))
   ppx_deriving
   (testo :with-test)
-  (odoc :with-doc)
+  (odoc (and (>= 3.2.1) :with-doc))
   (afl-persistent :with-dev-setup)
-  (ocamlformat :with-dev-setup)
+  (ocamlformat (and (= 0.29.0) :with-dev-setup))
   (yaml :with-dev-setup)
  )
  (tags

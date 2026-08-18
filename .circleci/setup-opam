@@ -24,7 +24,9 @@ if ! opam repo list | grep -q -F 'https://opam.ocaml.org'; then
   opam repo set-url default https://opam.ocaml.org
   # an opam update is included
 else
-  opam update
+  # Work around error:
+  # Cannot remove /home/opam/.opam/repo/default (/usr/bin/opam: "unlink" failed on /home/opam/.opam/repo/default: Is a directory).
+  opam update --debug || (echo "RETRYING opam update"; opam update --debug)
 fi
 
 opam install --deps-only --with-test --with-dev-setup --with-doc -y .

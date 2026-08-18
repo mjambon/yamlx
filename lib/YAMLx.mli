@@ -726,6 +726,61 @@ module Value : sig
           ksprintf failwith "%s: expected an int"
             (bad |> YAMLx.Value.loc |> YAMLx.format_loc)
       ]} *)
+
+  (** Convenience constructors that use {!zero_loc} as the source location.
+
+      These are useful when building {!value} trees programmatically and there's
+      no meaningful source location or the tree is destined to be written as a
+      YAML document straight away.
+
+      {v
+      module Y = YAMLx.Value.Build
+
+      let v =
+        Y.map [
+          "name", Y.string "Alice";
+          "scores", Y.seq [ Y.int 95; Y.int 87 ]
+        ]
+      v}
+
+      or
+
+      {v
+      let v =
+        let open YAMLx.Value.Build in
+        map [
+          "name", string "Alice";
+          "scores", seq [ int 95; int 87 ]
+        ]
+      v} *)
+  module Build : sig
+    val null : value
+    (** [Null zero_loc] *)
+
+    val bool : bool -> value
+    (** [Bool (zero_loc, b)] *)
+
+    val int : int -> value
+    (** [Int (zero_loc, Int64.of_int i)]. Use this for ordinary OCaml ints. See
+        also {!int64}. *)
+
+    val int64 : int64 -> value
+    (** [Int (zero_loc, i)]. *)
+
+    val float : float -> value
+    (** [Float (zero_loc, f)] *)
+
+    val string : string -> value
+    (** [String (zero_loc, s)] *)
+
+    val seq : value list -> value
+    (** [Seq (zero_loc, items)] *)
+
+    val map : (string * value) list -> value
+    (** [Map (zero_loc, pairs)] where each key is a plain string and each pair
+        also uses [zero_loc]. If you need to produce non-string keys, use the
+        {!Map} constructor directly. *)
+  end
 end
 
 (**/**)
