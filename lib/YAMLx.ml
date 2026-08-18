@@ -764,11 +764,10 @@ module Values = struct
     if strict_keys then check_strict_keys_value values;
     List.map value_to_node values
 
-  let to_yaml ?(strict_keys = true) values =
-    Nodes.to_yaml (to_nodes ~strict_keys values)
+  let to_yaml ?strict_keys values = Nodes.to_yaml (to_nodes ?strict_keys values)
 
-  let to_yaml_file ?(strict_keys = true) path values =
-    write_file path (to_yaml ~strict_keys values)
+  let to_yaml_file ?strict_keys path values =
+    write_file path (to_yaml ?strict_keys values)
 end
 
 module Value = struct
