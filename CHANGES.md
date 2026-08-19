@@ -1,4 +1,4 @@
-## Unreleased
+## 0.5.0 (2026-08-19)
 
 - **Duplicate-key check on export**
   ([#46](https://github.com/mjambon/yamlx/issues/46),
@@ -12,7 +12,6 @@
   `~strict_keys:false` to allow them through.
   **Breaking change**: existing code that serializes maps with duplicate keys
   will now raise `Duplicate_key_error` unless `~strict_keys:false` is passed.
-
 - **`Value.Build` submodule** — convenience constructors using `zero_loc`
   ([#44](https://github.com/mjambon/yamlx/issues/44),
   [#45](https://github.com/mjambon/yamlx/pull/45)).
