@@ -17,11 +17,8 @@ permissive two-clause license with no copyleft requirements. At that point
 everyone — past, present, and future — will be able to use YAMLx freely
 in any project.
 
-Funds will be collected through **GitHub Sponsors**.
-
-**$530 / $5,000 raised · $4,470 remaining**
-
-`██████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░`
+Funds will be collected through **GitHub Sponsors**. Progress toward
+the goal will be tracked there.
 
 ## Donation tiers
 
