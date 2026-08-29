@@ -3,7 +3,7 @@
 ## Current license: AGPL
 
 YAMLx is currently released under the
-[GNU Affero General Public License v3 (AGPL)](LICENSE). The AGPL
+[GNU Affero General Public License v3 (AGPL)](LICENSES/AGPL-3.0.txt). The AGPL
 requires that any software that incorporates YAMLx — including software
 offered as a network service — must itself be released under the AGPL.
 For many commercial or proprietary projects this is not acceptable.
@@ -51,6 +51,7 @@ commercial users a compliant way to use it in the meantime.
 
 ## Donors
 
-* Andrey Popp
-* _your name here_
+<!-- chronological order - early donors first -->
 
+* [Andrey Popp](https://github.com/andreypopp)
+* [Ahrefs](https://github.com/ahrefs)
